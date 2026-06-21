@@ -1,5 +1,5 @@
 """
-Jarvis — Milestone 1
+Jarvis — Milestone 2
 Text-only Claude tool-calling loop over FastAPI.
 
 Flow:
@@ -24,7 +24,7 @@ from tools import TOOL_SCHEMAS, run_tool
 
 load_dotenv()
 
-MODEL = MODEL = "claude-opus-4-8"
+MODEL = "claude-opus-4-8"
 MAX_TOOL_ROUNDS = 8  # safety cap so the loop can't spin forever
 
 SYSTEM_PROMPT = (
@@ -68,7 +68,10 @@ def agent_loop(user_message: str) -> str:
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
-                result = run_tool(block.name, block.input)
+                try:
+                    result = run_tool(block.name, block.input)
+                except Exception as exc:
+                    result = {"error": f"{type(exc).__name__}: {exc}"}
                 tool_results.append(
                     {
                         "type": "tool_result",

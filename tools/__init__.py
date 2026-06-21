@@ -4,57 +4,105 @@ Tool registry for Jarvis.
 Each tool is a plain Python function plus a JSON schema describing it to
 Claude. To add a tool: write the function, add its schema to TOOL_SCHEMAS,
 and register it in TOOL_FUNCTIONS. Nothing else changes.
-
-For Milestone 1 these are STUBS that only print(), so we can verify the
-tool-calling loop end-to-end before wiring real integrations.
 """
 
+import os
+from datetime import datetime
 
-def control_light(room: str, state: str) -> dict:
-    """STUB: pretend to control a light in a room."""
-    print(f"[TOOL] control_light(room={room!r}, state={state!r})")
-    return {"room": room, "state": state, "result": "ok (stub)"}
+import requests
+
+MAC_AGENT_URL = os.environ.get("MAC_AGENT_URL", "http://localhost:8765")
 
 
-def system_status() -> dict:
-    """STUB: pretend to report system status."""
-    print("[TOOL] system_status()")
+def get_time() -> dict:
+    """Return the current local date and time."""
+    now = datetime.now()
     return {
-        "cpu": "12%",
-        "memory": "4.2GB / 16GB",
-        "status": "all systems nominal (stub)",
+        "time": now.strftime("%I:%M %p"),
+        "date": now.strftime("%A, %B %d, %Y"),
+        "iso": now.isoformat(),
     }
+
+
+def get_weather(city: str) -> dict:
+    """Fetch current weather for a city using wttr.in (no API key needed)."""
+    resp = requests.get(
+        f"https://wttr.in/{city}",
+        params={"format": "j1"},
+        headers={"User-Agent": "Jarvis/1.0"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    current = data["current_condition"][0]
+    return {
+        "city": city,
+        "temp_f": current["temp_F"],
+        "temp_c": current["temp_C"],
+        "feels_like_f": current["FeelsLikeF"],
+        "humidity": current["humidity"],
+        "description": current["weatherDesc"][0]["value"],
+        "wind_mph": current["windspeedMiles"],
+    }
+
+
+def control_mac_app(app_name: str) -> dict:
+    """Open an application on the MacBook via the Mac control agent."""
+    try:
+        resp = requests.post(
+            f"{MAC_AGENT_URL}/open_app",
+            json={"app_name": app_name},
+            timeout=12,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "error": "Mac agent offline — is the Mac awake and the agent running?"}
+    except requests.exceptions.RequestException as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 # --- Claude-facing schemas -------------------------------------------------
 
 TOOL_SCHEMAS = [
     {
-        "name": "control_light",
-        "description": "Turn a light on or off in a given room.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "room": {
-                    "type": "string",
-                    "description": "The room whose light to control, e.g. 'lab'.",
-                },
-                "state": {
-                    "type": "string",
-                    "enum": ["on", "off"],
-                    "description": "Whether to turn the light on or off.",
-                },
-            },
-            "required": ["room", "state"],
-        },
-    },
-    {
-        "name": "system_status",
-        "description": "Report current system status (CPU, memory, overall health).",
+        "name": "get_time",
+        "description": "Return the current local date and time.",
         "input_schema": {
             "type": "object",
             "properties": {},
             "required": [],
+        },
+    },
+    {
+        "name": "get_weather",
+        "description": (
+            "Get the current weather for a city. Use the user's city if they "
+            "don't specify one."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "City name, e.g. 'New York' or 'London'.",
+                },
+            },
+            "required": ["city"],
+        },
+    },
+    {
+        "name": "control_mac_app",
+        "description": "Open an application on the user's MacBook by name, e.g. 'Spotify', 'Safari', 'Notes'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "description": "The exact name of the macOS app to open.",
+                },
+            },
+            "required": ["app_name"],
         },
     },
 ]
@@ -62,8 +110,9 @@ TOOL_SCHEMAS = [
 # --- Dispatch table --------------------------------------------------------
 
 TOOL_FUNCTIONS = {
-    "control_light": control_light,
-    "system_status": system_status,
+    "get_time": get_time,
+    "get_weather": get_weather,
+    "control_mac_app": control_mac_app,
 }
 
 
