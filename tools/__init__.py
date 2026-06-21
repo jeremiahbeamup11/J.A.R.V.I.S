@@ -62,6 +62,71 @@ def control_mac_app(app_name: str) -> dict:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def set_volume(level: int) -> dict:
+    """Set the Mac's output volume (0-100) via the Mac control agent."""
+    level = max(0, min(100, level))
+    try:
+        resp = requests.post(
+            f"{MAC_AGENT_URL}/set_volume",
+            json={"level": level},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "error": "Mac agent offline — is the Mac awake and the agent running?"}
+    except requests.exceptions.RequestException as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def media_control(action: str) -> dict:
+    """Send a media key event (play/pause/next/previous) via the Mac agent."""
+    try:
+        resp = requests.post(
+            f"{MAC_AGENT_URL}/media_control",
+            json={"action": action},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "error": "Mac agent offline — is the Mac awake and the agent running?"}
+    except requests.exceptions.RequestException as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def open_url(url: str) -> dict:
+    """Open a URL in the default browser via the Mac control agent."""
+    try:
+        resp = requests.post(
+            f"{MAC_AGENT_URL}/open_url",
+            json={"url": url},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "error": "Mac agent offline — is the Mac awake and the agent running?"}
+    except requests.exceptions.RequestException as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def run_shortcut(name: str) -> dict:
+    """Run a named macOS Shortcut via the Mac control agent."""
+    try:
+        resp = requests.post(
+            f"{MAC_AGENT_URL}/run_shortcut",
+            json={"name": name},
+            timeout=35,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "error": "Mac agent offline — is the Mac awake and the agent running?"}
+    except requests.exceptions.RequestException as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 # --- Claude-facing schemas -------------------------------------------------
 
 TOOL_SCHEMAS = [
@@ -105,6 +170,65 @@ TOOL_SCHEMAS = [
             "required": ["app_name"],
         },
     },
+    {
+        "name": "set_volume",
+        "description": "Set the Mac's output volume to a level between 0 (mute) and 100 (max).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "integer",
+                    "description": "Volume level from 0 (silent) to 100 (maximum).",
+                    "minimum": 0,
+                    "maximum": 100,
+                },
+            },
+            "required": ["level"],
+        },
+    },
+    {
+        "name": "media_control",
+        "description": "Control media playback on the Mac: play, pause, skip to next track, or go to previous track.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["play", "pause", "next", "previous"],
+                    "description": "The media action to perform.",
+                },
+            },
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "open_url",
+        "description": "Open a URL in the default browser on the Mac.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The full URL to open, e.g. 'https://google.com'.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "run_shortcut",
+        "description": "Run a macOS Shortcut by name. Only shortcuts the user has already created in the Shortcuts app can be run.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The exact name of the macOS Shortcut to run.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 # --- Dispatch table --------------------------------------------------------
@@ -113,6 +237,10 @@ TOOL_FUNCTIONS = {
     "get_time": get_time,
     "get_weather": get_weather,
     "control_mac_app": control_mac_app,
+    "set_volume": set_volume,
+    "media_control": media_control,
+    "open_url": open_url,
+    "run_shortcut": run_shortcut,
 }
 
 
