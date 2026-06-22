@@ -1,31 +1,31 @@
 # Loop State
 
 ## Last Completed
-Milestone 7: Wake word — "Hey Jarvis" triggers the voice loop.
-- wakeword.py: standalone loop using OpenWakeWord (hey_jarvis model)
-- Listens continuously → detects wake word → records → transcribes →
-  agent_loop → speaks reply → back to listening
-- Uses claude-sonnet-4-6 for fast responses in voice mode
-- requirements.txt updated with openwakeword>=0.6
-- No API key needed (OpenWakeWord is fully open source)
+Milestone 9c: Router + local tool-calling. VERIFIED.
+- Intent-based router decides LOCAL vs CLOUD before calling any model
+- Local brain (Ollama llama3.1:8b) now has full tool-calling: schemas
+  converted to OpenAI format, tool results fed back via run_tool()
+- Resilience fallback: cloud failure → local, local failure → cloud
+- Logging on every request: routed_to, reason, fallback status
+- /chat uses router, /chat_cloud and /chat_local bypass for debugging
+- /voice endpoint also uses the router
 
 ## Verification Result
-PASSED — 2026-06-21. User ran `python3 wakeword.py`, said "Hey Jarvis",
-spoke a command, and Jarvis responded aloud. Full hands-free loop
-confirmed working.
-
-## All Milestones Complete
-1. Text-only tool-calling loop — DONE
-2. Real tools (time + weather) — DONE
-3. Mac control (open apps) — DONE
-4. Expanded Mac tools (volume, media, URLs, shortcuts) — DONE
-5. Voice input (faster-whisper) — DONE
-6. Voice output (ElevenLabs TTS) — DONE
-7. Wake word (OpenWakeWord "Hey Jarvis") — DONE
+PASSED — 2026-06-22. All three local tool-calling tests confirmed
+real-world effects:
+1. "What time is it?" → local → get_time() → returned actual current time
+2. "Set volume to 30" → local → set_volume(30) → Mac volume actually changed
+3. "Open Notes" → local → control_mac_app("Notes") → Notes app actually opened
+All three routed to local brain, all three executed tools correctly.
 
 ## Current Task
-All PROJECT.md milestones are complete. Jarvis is a working voice-controlled
-AI assistant with Mac control capabilities.
+Milestone 9c complete. Commit and push, then await user direction for
+next milestone.
+
+## Notes / Decisions
+- llama3.1:8b confirmed working for tool-calling via Ollama
+- Model swap (Qwen A/B test) deferred; one-line change via OLLAMA_MODEL
+- Local tier requires Mac awake + Ollama running; cloud is always-on backstop
 
 ## Blocked
 (none)

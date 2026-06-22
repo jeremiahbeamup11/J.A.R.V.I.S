@@ -1,19 +1,20 @@
 """
-Jarvis — Milestone 6
-Claude tool-calling loop over FastAPI with voice I/O.
+Jarvis — Milestone 9c
+Claude + Ollama dual-brain orchestrator with intent-based routing.
 
 Flow:
   POST /chat {"message": "..."}
-    -> send to Claude with TOOL_SCHEMAS
-    -> if Claude calls tools, run them, feed results back
-    -> repeat until Claude returns a plain text answer
-    -> return that answer
-
-This is the core "brain" loop. Voice (STT/TTS) and wake word get bolted
-onto the ends later — they do not change this loop.
+    -> router decides LOCAL or CLOUD based on intent keywords
+    -> chosen brain processes the request
+    -> if chosen brain fails, falls back to the other
+    -> returns reply + routing metadata
 """
 
+import logging
 import os
+import re
+
+import requests as http_requests
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -27,7 +28,9 @@ from voice import record_audio, transcribe
 load_dotenv()
 
 MODEL = "claude-opus-4-8"
-MAX_TOOL_ROUNDS = 8  # safety cap so the loop can't spin forever
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
+MAX_TOOL_ROUNDS = 8
 
 SYSTEM_PROMPT = (
     "You are Jarvis, a concise, capable voice assistant running on a Mac. "
@@ -40,6 +43,9 @@ SYSTEM_PROMPT = (
     "read aloud. Do not narrate that you are calling tools."
 )
 
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+log = logging.getLogger("jarvis.router")
+
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 app = FastAPI(title="Jarvis")
 
@@ -47,6 +53,31 @@ app = FastAPI(title="Jarvis")
 class ChatRequest(BaseModel):
     message: str
 
+
+# --- Router ----------------------------------------------------------------
+
+_LOCAL_PATTERNS = [
+    (re.compile(r"\b(open|launch|start)\b.+\b(app|application|spotify|safari|notes|chrome|finder|music|messages|slack|discord|terminal)\b", re.I), "open_app"),
+    (re.compile(r"\b(volume|sound)\b.*\b(\d+|up|down|mute|max|loud|quiet)\b", re.I), "set_volume"),
+    (re.compile(r"\b(set|turn|change).*(volume|sound)\b", re.I), "set_volume"),
+    (re.compile(r"\b(play|pause|resume|stop|next|skip|previous|prev)\b.*\b(music|song|track|media|playback)?\b", re.I), "media_control"),
+    (re.compile(r"\b(open|go to|visit|navigate)\b.*\b(\.com|\.org|\.net|\.io|\.ai|http|www|url|website|site)\b", re.I), "open_url"),
+    (re.compile(r"\bwhat time\b", re.I), "get_time"),
+    (re.compile(r"\bwhat('s| is) the (date|day)\b", re.I), "get_time"),
+    (re.compile(r"\b(weather|temperature|forecast|how hot|how cold)\b", re.I), "get_weather"),
+    (re.compile(r"\b(run|execute)\b.*\bshortcut\b", re.I), "run_shortcut"),
+]
+
+
+def route(message: str) -> tuple[str, str]:
+    """Decide LOCAL or CLOUD for a message. Returns (target, reason)."""
+    for pattern, tool_name in _LOCAL_PATTERNS:
+        if pattern.search(message):
+            return "local", f"simple_intent:{tool_name}"
+    return "cloud", "no_simple_intent_matched"
+
+
+# --- Cloud brain (Claude) -------------------------------------------------
 
 def agent_loop(user_message: str) -> str:
     """Run the Claude tool-calling loop until a final text answer."""
@@ -61,16 +92,13 @@ def agent_loop(user_message: str) -> str:
             messages=messages,
         )
 
-        # If Claude isn't asking for a tool, we're done — return its text.
         if response.stop_reason != "tool_use":
             return "".join(
                 block.text for block in response.content if block.type == "text"
             ).strip()
 
-        # Append Claude's turn (which contains the tool_use blocks).
         messages.append({"role": "assistant", "content": response.content})
 
-        # Run every tool Claude asked for and collect the results.
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
@@ -86,11 +114,128 @@ def agent_loop(user_message: str) -> str:
                     }
                 )
 
-        # Feed the tool results back as the next user turn.
         messages.append({"role": "user", "content": tool_results})
 
     return "Stopped: hit the maximum number of tool rounds."
 
+
+# --- Local brain (Ollama) -------------------------------------------------
+
+def _anthropic_to_ollama_tools(schemas: list[dict]) -> list[dict]:
+    """Convert Anthropic tool schemas to Ollama (OpenAI-style) format."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": s["name"],
+                "description": s.get("description", ""),
+                "parameters": s["input_schema"],
+            },
+        }
+        for s in schemas
+    ]
+
+
+_OLLAMA_TOOLS = _anthropic_to_ollama_tools(TOOL_SCHEMAS)
+
+
+def _ollama_chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
+    """Send a chat request to the local Ollama endpoint."""
+    body: dict = {
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "stream": False,
+    }
+    if tools:
+        body["tools"] = tools
+    resp = http_requests.post(
+        f"{OLLAMA_URL}/api/chat",
+        json=body,
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def agent_loop_local(user_message: str) -> str:
+    """Run the local Ollama tool-calling loop until a final text answer."""
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_message},
+    ]
+
+    for _ in range(MAX_TOOL_ROUNDS):
+        data = _ollama_chat(messages, tools=_OLLAMA_TOOLS)
+        msg = data["message"]
+
+        tool_calls = msg.get("tool_calls")
+        if not tool_calls:
+            return (msg.get("content") or "").strip()
+
+        messages.append(msg)
+
+        for tc in tool_calls:
+            fn = tc["function"]
+            tool_name = fn["name"]
+            tool_args = fn.get("arguments", {})
+            try:
+                result = run_tool(tool_name, tool_args)
+            except Exception as exc:
+                result = {"error": f"{type(exc).__name__}: {exc}"}
+            messages.append({"role": "tool", "content": str(result)})
+
+    return "Stopped: hit the maximum number of tool rounds."
+
+
+# --- Routed entrypoint ----------------------------------------------------
+
+def routed_chat(user_message: str) -> dict:
+    """Route a message to the right brain, with fallback on failure."""
+    target, reason = route(user_message)
+    fallback_used = False
+    reply = None
+
+    if target == "local":
+        try:
+            reply = agent_loop_local(user_message)
+            log.info("ROUTE local | reason=%s | fallback=no | msg=%r", reason, user_message[:80])
+        except Exception as exc:
+            log.warning("ROUTE local FAILED (%s), falling back to cloud | msg=%r", exc, user_message[:80])
+            target = "cloud"
+            fallback_used = True
+
+    if reply is None:
+        try:
+            reply = agent_loop(user_message)
+            if fallback_used:
+                log.info("ROUTE cloud (fallback) | reason=%s | msg=%r", reason, user_message[:80])
+            else:
+                log.info("ROUTE cloud | reason=%s | fallback=no | msg=%r", reason, user_message[:80])
+        except Exception as exc:
+            if not fallback_used:
+                log.warning("ROUTE cloud FAILED (%s), falling back to local | msg=%r", exc, user_message[:80])
+                fallback_used = True
+                try:
+                    reply = agent_loop_local(user_message)
+                    log.info("ROUTE local (fallback) | reason=%s | msg=%r", reason, user_message[:80])
+                except Exception as exc2:
+                    reply = f"Both brains failed. Cloud: {exc} | Local: {exc2}"
+                    log.error("ROUTE both FAILED | msg=%r", user_message[:80])
+            else:
+                reply = f"Both brains failed: {exc}"
+                log.error("ROUTE both FAILED | msg=%r", user_message[:80])
+
+    model_used = OLLAMA_MODEL if (target == "local" and not fallback_used) or (target == "cloud" and fallback_used) else MODEL
+    return {
+        "reply": reply,
+        "routed_to": target if not fallback_used else ("cloud" if target == "local" else "local"),
+        "reason": reason,
+        "fallback": fallback_used,
+        "model": model_used,
+    }
+
+
+# --- Endpoints -------------------------------------------------------------
 
 @app.get("/")
 def health():
@@ -99,18 +244,37 @@ def health():
 
 @app.post("/chat")
 def chat(req: ChatRequest):
+    return routed_chat(req.message)
+
+
+@app.post("/chat_cloud")
+def chat_cloud(req: ChatRequest):
+    """Direct cloud path — bypasses the router."""
     reply = agent_loop(req.message)
-    return {"reply": reply}
+    return {"reply": reply, "model": MODEL}
+
+
+@app.post("/chat_local")
+def chat_local(req: ChatRequest):
+    """Direct local path — bypasses the router."""
+    try:
+        reply = agent_loop_local(req.message)
+    except http_requests.exceptions.ConnectionError:
+        reply = "Local brain offline — is Ollama running?"
+    except Exception as exc:
+        reply = f"Local brain error: {type(exc).__name__}: {exc}"
+    return {"reply": reply, "model": OLLAMA_MODEL}
 
 
 @app.post("/voice")
 def voice():
-    """Record from the mic, transcribe, run agent loop, and speak the reply."""
+    """Record from the mic, transcribe, route, and speak the reply."""
     audio = record_audio()
     text = transcribe(audio)
     if not text:
         speak("I didn't catch that.")
         return {"transcript": "", "reply": "I didn't catch that."}
-    reply = agent_loop(text)
-    speak(reply)
-    return {"transcript": text, "reply": reply}
+    result = routed_chat(text)
+    speak(result["reply"])
+    result["transcript"] = text
+    return result
