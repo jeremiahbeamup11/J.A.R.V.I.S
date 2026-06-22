@@ -1,25 +1,31 @@
 # Loop State
 
 ## Last Completed
-Milestone 6: Voice output — ElevenLabs TTS speaks Claude's replies aloud.
-- tts.py: ElevenLabs SDK generates speech, afplay plays it through speakers
-- /voice endpoint now records → transcribes → agent_loop → speaks reply
-- Uses eleven_turbo_v2_5 model, "Daniel" voice (configurable via env var)
-- ELEVENLABS_API_KEY added to .env
-- requirements.txt updated with elevenlabs>=1.0
+Milestone 7: Wake word — "Hey Jarvis" triggers the voice loop.
+- wakeword.py: standalone loop using OpenWakeWord (hey_jarvis model)
+- Listens continuously → detects wake word → records → transcribes →
+  agent_loop → speaks reply → back to listening
+- Uses claude-sonnet-4-6 for fast responses in voice mode
+- requirements.txt updated with openwakeword>=0.6
+- No API key needed (OpenWakeWord is fully open source)
 
 ## Verification Result
-PASSED — 2026-06-21. User spoke "What's the weather in Houston?" and
-Jarvis replied aloud: "It's 88 degrees and partly cloudy in Houston,
-though with the humidity it feels more like 98. Pretty muggy out there."
-Full pipeline: mic → faster-whisper → agent_loop → get_weather() →
-ElevenLabs TTS → speakers.
+PASSED — 2026-06-21. User ran `python3 wakeword.py`, said "Hey Jarvis",
+spoke a command, and Jarvis responded aloud. Full hands-free loop
+confirmed working.
+
+## All Milestones Complete
+1. Text-only tool-calling loop — DONE
+2. Real tools (time + weather) — DONE
+3. Mac control (open apps) — DONE
+4. Expanded Mac tools (volume, media, URLs, shortcuts) — DONE
+5. Voice input (faster-whisper) — DONE
+6. Voice output (ElevenLabs TTS) — DONE
+7. Wake word (OpenWakeWord "Hey Jarvis") — DONE
 
 ## Current Task
-Milestone 7 (from PROJECT.md): Wake word — "Jarvis" triggers the listen
-loop via Porcupine. The assistant should idle until it hears "Jarvis",
-then record/transcribe/respond/speak, then go back to listening for the
-wake word.
+All PROJECT.md milestones are complete. Jarvis is a working voice-controlled
+AI assistant with Mac control capabilities.
 
 ## Blocked
 (none)
