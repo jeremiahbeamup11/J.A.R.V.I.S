@@ -56,25 +56,64 @@ class ChatRequest(BaseModel):
 
 # --- Router ----------------------------------------------------------------
 
-_LOCAL_PATTERNS = [
-    (re.compile(r"\b(open|launch|start)\b.+\b(app|application|spotify|safari|notes|chrome|finder|music|messages|slack|discord|terminal)\b", re.I), "open_app"),
-    (re.compile(r"\b(volume|sound)\b.*\b(\d+|up|down|mute|max|loud|quiet)\b", re.I), "set_volume"),
-    (re.compile(r"\b(set|turn|change).*(volume|sound)\b", re.I), "set_volume"),
+# TRUST LIST: tools the local brain handles reliably for simple, single-tool
+# requests. Demote a tool by removing it from this set — it will route to
+# cloud with a logged reason. Baseline: llama3.1:8b 42/42 varied tests.
+LOCAL_TRUSTED_TOOLS = {
+    "get_time",
+    "get_weather",
+    "set_volume",
+    "media_control",
+    "open_url",
+    "control_mac_app",
+    "run_shortcut",
+}
+
+_INTENT_PATTERNS = [
+    (re.compile(r"\b(open|launch|start)\b.+\b(app|application|spotify|safari|notes|chrome|finder|music|messages|slack|discord|terminal|calculator)\b", re.I), "control_mac_app"),
+    (re.compile(r"\b(volume|sound)\b.*\b(\d+|up|down|mute|max|loud|quiet|halfway)\b", re.I), "set_volume"),
+    (re.compile(r"\b(set|turn|change|make|crank).*(volume|sound|loud|quiet)\b", re.I), "set_volume"),
+    (re.compile(r"\bcan.t hear\b|\bbarely hear\b|\btoo quiet\b|\btoo loud\b", re.I), "set_volume"),
     (re.compile(r"\b(play|pause|resume|stop|next|skip|previous|prev)\b.*\b(music|song|track|media|playback)?\b", re.I), "media_control"),
-    (re.compile(r"\b(open|go to|visit|navigate)\b.*\b(\.com|\.org|\.net|\.io|\.ai|http|www|url|website|site)\b", re.I), "open_url"),
-    (re.compile(r"\bwhat time\b", re.I), "get_time"),
-    (re.compile(r"\bwhat('s| is) the (date|day)\b", re.I), "get_time"),
+    (re.compile(r"\b(open|go to|visit|navigate|pull up)\b.*\b(\.com|\.org|\.net|\.io|\.ai|http|www|url|website|site)\b", re.I), "open_url"),
+    (re.compile(r"\bwhat time\b|\bcheck the time\b|\bcurrent time\b|\btell me the time\b", re.I), "get_time"),
+    (re.compile(r"\bwhat('s| is) the (date|day)\b|\bwhat day\b", re.I), "get_time"),
     (re.compile(r"\b(weather|temperature|forecast|how hot|how cold)\b", re.I), "get_weather"),
+    (re.compile(r"\bwhat.{0,3} it like (outside|out)\b|\bhow.{0,3} it (outside|looking)\b|\blike outside\b", re.I), "get_weather"),
     (re.compile(r"\b(run|execute)\b.*\bshortcut\b", re.I), "run_shortcut"),
 ]
 
+_MULTI_SIGNAL = re.compile(r"\b(and|then|also|plus)\b", re.I)
+
 
 def route(message: str) -> tuple[str, str]:
-    """Decide LOCAL or CLOUD for a message. Returns (target, reason)."""
-    for pattern, tool_name in _LOCAL_PATTERNS:
+    """Decide LOCAL or CLOUD for a message. Returns (target, reason).
+
+    Trust is per-REQUEST, not blanket per-tool:
+    - Simple single-tool requests for trusted tools → LOCAL
+    - Multi-tool, complex, or ambiguous requests → CLOUD
+    - Untrusted tools → CLOUD
+    """
+    matched_tools = []
+    matched_reason = None
+    for pattern, tool_name in _INTENT_PATTERNS:
         if pattern.search(message):
-            return "local", f"simple_intent:{tool_name}"
-    return "cloud", "no_simple_intent_matched"
+            if tool_name not in matched_tools:
+                matched_tools.append(tool_name)
+            if matched_reason is None:
+                matched_reason = tool_name
+
+    if not matched_tools:
+        return "cloud", "no_simple_intent_matched"
+
+    if len(matched_tools) > 1 or _MULTI_SIGNAL.search(message):
+        return "cloud", f"multi_tool_or_complex:{'+'.join(matched_tools)}"
+
+    tool = matched_tools[0]
+    if tool not in LOCAL_TRUSTED_TOOLS:
+        return "cloud", f"tool_not_trusted_locally:{tool}"
+
+    return "local", f"simple_intent:{tool}"
 
 
 # --- Cloud brain (Claude) -------------------------------------------------
