@@ -1,24 +1,25 @@
 # Loop State
 
 ## Last Completed
-Milestone 4: All four Mac control tools built and verified.
-- 4a: set_volume(0-100) — osascript, clamped integer
-- 4b: media_control(play/pause/next/previous) — System Events key codes
-- 4c: open_url — opens http/https URLs in default browser
-- 4d: run_shortcut — validates name against `shortcuts list`, then runs
-System prompt updated to list all Mac capabilities so Claude uses them.
+Milestone 6: Voice output — ElevenLabs TTS speaks Claude's replies aloud.
+- tts.py: ElevenLabs SDK generates speech, afplay plays it through speakers
+- /voice endpoint now records → transcribes → agent_loop → speaks reply
+- Uses eleven_turbo_v2_5 model, "Daniel" voice (configurable via env var)
+- ELEVENLABS_API_KEY added to .env
+- requirements.txt updated with elevenlabs>=1.0
 
 ## Verification Result
-PASSED — 2026-06-21. All four tools verified live by user:
-- set_volume: volume turned up and down
-- media_control: pause sent (no player running, but tool chain confirmed)
-- open_url: "Open youtube.com" opened YouTube in browser
-- run_shortcut: user created a text-to-audio shortcut, ran it via Jarvis
+PASSED — 2026-06-21. User spoke "What's the weather in Houston?" and
+Jarvis replied aloud: "It's 88 degrees and partly cloudy in Houston,
+though with the humidity it feels more like 98. Pretty muggy out there."
+Full pipeline: mic → faster-whisper → agent_loop → get_weather() →
+ElevenLabs TTS → speakers.
 
 ## Current Task
-Milestone 5 (from PROJECT.md): Voice input — faster-whisper transcribes
-mic audio to text. Wire it so spoken words go through the existing
-tool-calling loop and produce a text reply.
+Milestone 7 (from PROJECT.md): Wake word — "Jarvis" triggers the listen
+loop via Porcupine. The assistant should idle until it hears "Jarvis",
+then record/transcribe/respond/speak, then go back to listening for the
+wake word.
 
 ## Blocked
 (none)

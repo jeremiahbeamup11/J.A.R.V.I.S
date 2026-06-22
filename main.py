@@ -1,6 +1,6 @@
 """
-Jarvis — Milestone 2
-Text-only Claude tool-calling loop over FastAPI.
+Jarvis — Milestone 6
+Claude tool-calling loop over FastAPI with voice I/O.
 
 Flow:
   POST /chat {"message": "..."}
@@ -21,6 +21,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from tools import TOOL_SCHEMAS, run_tool
+from tts import speak
+from voice import record_audio, transcribe
 
 load_dotenv()
 
@@ -99,3 +101,16 @@ def health():
 def chat(req: ChatRequest):
     reply = agent_loop(req.message)
     return {"reply": reply}
+
+
+@app.post("/voice")
+def voice():
+    """Record from the mic, transcribe, run agent loop, and speak the reply."""
+    audio = record_audio()
+    text = transcribe(audio)
+    if not text:
+        speak("I didn't catch that.")
+        return {"transcript": "", "reply": "I didn't catch that."}
+    reply = agent_loop(text)
+    speak(reply)
+    return {"transcript": text, "reply": reply}
