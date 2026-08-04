@@ -58,7 +58,7 @@ end-to-end on the cloud brain.
 8. (LATER) ESP32 device bridge for custom hardware.
 9. [DONE / ACTIVE] Optional local-brain tier on the Mac (Ollama router).
 10. [DONE] Grok Build engineering body (see Milestone 10 below).
-11. [DONE 11a] Workshop body — design briefs + 3D STL + open on Mac.
+11. [DONE 11a–11b] Workshop body — STL + Blender engine when installed.
 12. [DONE 12a] Phone remote — iPhone text control over LAN (/phone).
 13. [DONE 13a] Memory — session continuity + long-term notes.
 
@@ -149,22 +149,34 @@ Pattern (multi-tool Claude orchestration, always cloud):
   reason → build_3d_model (STL) → write_design_brief → open_file / Finder
   → explain while pointing at the model
 
-v1 geometry: pure-Python binary STL from primitives (box, cylinder,
-sphere, cone). No Blender required. Open with eDrawings (installed) or
-Preview. Files land under WORKSHOP_DIR (default ~/Desktop/JARVIS/workshop).
+Geometry engines:
+- **primitives** (always): pure-Python binary STL (box/cylinder/sphere/cone)
+- **blender** (11b): when Blender.app installed — named + colorized parts,
+  exports `.blend` + `.stl` + `.glb`, open in Blender for the “spin while
+  explaining” loop. Headless only via fixed generated script (no raw shell).
+- **auto** (default): blender if present, else primitives
+
+Recommended install for this project: **Blender** (free, blender.org →
+/Applications). Optional later (not required for 11b):
+- CadQuery/build123d — true solid CAD + STEP (pip; no nice GUI alone)
+- OpenSCAD — code-CAD parametric parts
+Not recommended as primary for Jarvis automation: Fusion 360 / SolidWorks
+(poor headless control for our loop).
+
+Files land under WORKSHOP_DIR (default ~/Desktop/JARVIS/workshop).
+HTTP: `GET /workshop/engines`
 
 Safety:
 - Artifacts only under workshop / OPEN_PATH_ALLOWLIST / Desktop/JARVIS
 - mac_agent open_path + reveal_in_finder are enumerated endpoints
-- No raw shell; no arbitrary file write outside workshop
+- No raw shell; Blender runs only our generated script + JSON spec
 
 Milestones:
 - 11a: [DONE] build_3d_model + brief + open_file/reveal + system-prompt workflow
-- 11b: (NEXT) richer CAD path — Blender/OpenSCAD/CadQuery when installed;
-      export STEP; named materials/labels in a side viewer
-- 11c: (LATER) app-specific drivers (Keynote slides, Rotato, etc.) as
-      additional workshop tools
+- 11b: [DONE] Blender engine (auto detect), colorized named parts, .blend/.glb
+- 11c: (LATER) app-specific drivers (Keynote slides, Rotato, etc.)
 - 11d: (LATER) voice-safe confirm before long workshop builds
+- 11e: (LATER) CadQuery/STEP path if solid-model export is needed
 
 ## Milestone 12 — Phone remote (iPhone client) [DONE 12a]
 Goal: control Jarvis from the iPhone while the Mac runs the brain + bodies.

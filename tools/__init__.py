@@ -20,6 +20,7 @@ from tools.workshop import (  # noqa: F401 — re-export
     build_3d_model,
     open_file,
     reveal_in_finder,
+    workshop_engines,
     write_design_brief,
 )
 from memory import (  # noqa: F401 — re-export
@@ -364,13 +365,13 @@ TOOL_SCHEMAS = [
     {
         "name": "build_3d_model",
         "description": (
-            "Build a tangible 3D assembly (binary STL) in the workshop folder "
-            "from primitive parts (box, cylinder, sphere, cone). Use this when "
-            "the user wants a physical/visible model of a system, mechanism, "
-            "thermal layout, vehicle concept, etc. After building, call "
-            "open_file (prefer app eDrawings if available) or reveal_in_finder "
-            "so they can see it. Units are labels; choose consistent sizes "
-            "(e.g. cm). Keep assemblies under ~40 parts when possible."
+            "Build a tangible 3D assembly in the workshop folder from primitive "
+            "parts (box, cylinder, sphere, cone). engine=auto uses Blender when "
+            "installed (named + colorized .blend + STL + GLB) else pure-Python "
+            "STL. After building: if blend_path exists, open_file with "
+            "app_name='Blender'; for STL-only use eDrawings/Preview. "
+            "Optional color [r,g,b] 0-1 on each part for Blender. "
+            "Keep assemblies under ~40 parts when possible."
         ),
         "input_schema": {
             "type": "object",
@@ -391,18 +392,43 @@ TOOL_SCHEMAS = [
                     "type": "string",
                     "description": "Optional short design notes saved with the model.",
                 },
+                "engine": {
+                    "type": "string",
+                    "enum": ["auto", "blender", "primitives"],
+                    "description": (
+                        "auto (default)=Blender if installed else primitives; "
+                        "blender=require Blender; primitives=STL only."
+                    ),
+                },
+                "open_after": {
+                    "type": "boolean",
+                    "description": "If true and Blender built a .blend, open it in Blender.",
+                },
                 "parts": {
                     "type": "array",
                     "description": (
                         "List of part objects. Each: type (box|cylinder|sphere|cone), "
-                        "optional name, pos [x,y,z], and type-specific size: "
-                        "box size [sx,sy,sz]; cylinder/cone radius+height (+axis for cylinder); "
+                        "optional name, pos [x,y,z], optional color [r,g,b] 0-1, "
+                        "and type-specific size: box size [sx,sy,sz]; "
+                        "cylinder/cone radius+height (+axis for cylinder); "
                         "sphere radius. Y is up."
                     ),
                     "items": {"type": "object"},
                 },
             },
             "required": ["name", "parts"],
+        },
+    },
+    {
+        "name": "workshop_engines",
+        "description": (
+            "Report whether Blender / primitives engines are available for "
+            "build_3d_model. Call if unsure whether Blender is installed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
         },
     },
     {
@@ -583,6 +609,7 @@ TOOL_FUNCTIONS = {
     "list_grok_sessions": list_grok_sessions,
     "clear_grok_session": clear_grok_session,
     "build_3d_model": build_3d_model,
+    "workshop_engines": workshop_engines,
     "write_design_brief": write_design_brief,
     "open_file": open_file,
     "reveal_in_finder": reveal_in_finder,

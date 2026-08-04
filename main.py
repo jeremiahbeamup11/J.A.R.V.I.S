@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from agent import MODEL, OLLAMA_MODEL, agent_loop, agent_loop_local, routed_chat
 from memory import clear_session, recall, remember, status as memory_status
 from tools.grok_build import clear_grok_session, list_grok_sessions
+from tools.workshop import workshop_engines
 from phone_api import (
     audio_to_wav,
     auth_required,
@@ -134,6 +135,12 @@ def grok_sessions_clear(req: ClearGrokSessionRequest | None = None):
     """Clear one project session (or all if path omitted)."""
     path = req.project_path if req else None
     return clear_grok_session(path)
+
+
+@app.get("/workshop/engines")
+def workshop_engines_status():
+    """Which 3D engines are available (primitives always; Blender if installed)."""
+    return workshop_engines()
 
 
 @app.post("/chat")

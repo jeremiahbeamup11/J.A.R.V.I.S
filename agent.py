@@ -50,17 +50,17 @@ SYSTEM_PROMPT = (
     "works, how to design something, or wants a model they can see/touch "
     "(example: lunar hopper thermal system), do a multi-step workflow:\n"
     "  1) Reason briefly about the real engineering requirements.\n"
-    "  2) build_3d_model — assemble a clear schematic 3D from primitives "
-    "(box/cylinder/sphere/cone) that represents the system (not photoreal; "
-    "readable labeled layout via distinct part sizes/positions).\n"
+    "  2) build_3d_model with engine=auto — Blender if installed (named + "
+    "colorized parts → .blend/.stl/.glb), else primitive STL. Use clear part "
+    "names and optional color [r,g,b]. Not photoreal; readable schematic.\n"
     "  3) write_design_brief into the same project_dir explaining the design.\n"
-    "  4) open_file on the STL (prefer app_name eDrawings; fallback Preview) "
-    "and/or reveal_in_finder so the model is on screen.\n"
-    "  5) In your spoken/text reply, explain the system while referring to "
-    "the model you just opened (e.g. the tall cylinder is the propellant "
-    "tank, the flat plate is the radiator).\n"
+    "  4) open_file: if blend_path exists use app_name='Blender'; else STL with "
+    "eDrawings/Preview. Also reveal_in_finder when helpful.\n"
+    "  5) Explain the system while referring to named/colored parts "
+    "(e.g. blue cylinder = propellant tank, red plate = radiator).\n"
     "Always do steps 2–4 for design/how-do-we-build/physical-system questions "
-    "unless the user only wants a pure verbal answer.\n\n"
+    "unless the user only wants a pure verbal answer. Call workshop_engines "
+    "if you need to know whether Blender is available.\n\n"
     "Software engineering: use run_grok_build for implement/fix/refactor/"
     "scaffold/tests on allowlisted code projects. Multi-step product builds: "
     "keep continue_session=true (default) so Grok remembers prior steps on "
@@ -303,6 +303,7 @@ def _anthropic_to_ollama_tools(schemas: list[dict]) -> list[dict]:
         "list_grok_sessions",
         "clear_grok_session",
         "build_3d_model",
+        "workshop_engines",
         "write_design_brief",
         "open_file",
         "reveal_in_finder",

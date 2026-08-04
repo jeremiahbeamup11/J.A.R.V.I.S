@@ -3,13 +3,16 @@ Jarvis Workshop — design/engineering work products on the Mac.
 
 Capability pattern (the "Tony Stark table" loop):
   1. Brain reasons about the problem (Claude).
-  2. Brain builds a tangible 3D model (STL of assembled primitives).
+  2. Brain builds a tangible 3D model (STL / Blender scene).
   3. Brain writes a short design brief next to the model.
   4. Mac agent opens the file / app so the user can see and spin it.
 
+Engines (Milestone 11b):
+  - primitives — pure-Python binary STL (always available)
+  - blender    — named/colorized .blend + STL + GLB (when Blender installed)
+  - auto       — blender if available, else primitives
+
 No raw shell. Artifacts only land under WORKSHOP_DIR (allowlisted).
-No Blender required for v1 — pure-Python binary STL, openable in
-eDrawings, Preview, Quick Look, slicers, etc.
 """
 
 from __future__ import annotations
@@ -23,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+
+from tools.blender_engine import blender_available, blender_status, build_with_blender
 
 MAC_AGENT_URL = os.environ.get("MAC_AGENT_URL", "http://localhost:8765")
 
@@ -266,35 +271,32 @@ def write_binary_stl(path: Path, triangles: list[Tri], solid_name: str = "jarvis
 
 # --- Public tools ----------------------------------------------------------
 
-def build_3d_model(
-    name: str,
+def workshop_engines() -> dict:
+    """Report which model engines are available."""
+    b = blender_status()
+    return {
+        "ok": True,
+        "engines": {
+            "primitives": {"available": True, "desc": "Always-on pure-Python STL"},
+            "blender": {
+                "available": b.get("available"),
+                "bin": b.get("blender_bin"),
+                "desc": "Named/colorized .blend + STL + GLB",
+            },
+        },
+        "default": "auto (blender if installed, else primitives)",
+        "hint": b.get("hint"),
+    }
+
+
+def _build_primitives(
+    project: Path,
+    slug: str,
+    title: str,
     parts: list,
-    title: str | None = None,
-    units: str = "cm",
-    notes: str | None = None,
+    units: str,
+    notes: str | None,
 ) -> dict:
-    """Assemble primitive parts into a binary STL under the workshop dir.
-
-    Each part is a dict, e.g.:
-      {"type":"box","name":"radiator","size":[40,2,20],"pos":[0,15,0]}
-      {"type":"cylinder","name":"tank","radius":6,"height":18,"pos":[0,0,0]}
-      {"type":"sphere","name":"sensor","radius":2,"pos":[10,0,8]}
-      {"type":"cone","name":"nozzle","radius":3,"height":8,"pos":[0,-12,0]}
-
-    Coordinate system: X right, Y up, Z toward viewer (simple engineering view).
-    Units are labels only (geometry numbers are raw model units).
-    """
-    if not parts or not isinstance(parts, list):
-        return {"ok": False, "error": "parts must be a non-empty list of part dicts"}
-
-    if len(parts) > 80:
-        return {"ok": False, "error": "too many parts (max 80) — simplify the assembly"}
-
-    slug = _slug(name)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    project = workshop_dir() / f"{slug}_{stamp}"
-    project.mkdir(parents=True, exist_ok=True)
-
     tris: list[Tri] = []
     catalog = []
     for i, part in enumerate(parts):
@@ -320,7 +322,8 @@ def build_3d_model(
 
     meta = {
         "name": slug,
-        "title": title or name,
+        "title": title,
+        "engine": "primitives",
         "units": units,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "part_count": len(catalog),
@@ -334,24 +337,154 @@ def build_3d_model(
 
     if notes:
         (project / "BRIEF.md").write_text(
-            f"# {title or name}\n\n{notes}\n",
+            f"# {title}\n\n{notes}\n",
             encoding="utf-8",
         )
 
     return {
         "ok": True,
+        "engine": "primitives",
         "project_dir": str(project),
         "stl_path": str(stl_path),
+        "blend_path": None,
+        "glb_path": None,
         "meta_path": str(meta_path),
         "part_count": len(catalog),
         "triangle_count": len(tris),
         "units": units,
         "result": (
-            f"Built 3D model '{title or name}' with {len(catalog)} parts "
-            f"({len(tris)} triangles) at {stl_path}. "
-            "Use open_file to show it in eDrawings/Preview, or reveal_in_finder."
+            f"Built primitive STL '{title}' with {len(catalog)} parts "
+            f"({len(tris)} tris) at {stl_path}. "
+            "Open with eDrawings/Preview via open_file, or reveal_in_finder."
         ),
     }
+
+
+def build_3d_model(
+    name: str,
+    parts: list,
+    title: str | None = None,
+    units: str = "cm",
+    notes: str | None = None,
+    engine: str = "auto",
+    open_after: bool = False,
+) -> dict:
+    """Assemble parts into a workshop 3D model.
+
+    Each part is a dict, e.g.:
+      {"type":"box","name":"radiator","size":[40,2,20],"pos":[0,15,0],
+       "color":[0.9,0.3,0.2]}
+      {"type":"cylinder","name":"tank","radius":6,"height":18,"pos":[0,0,0]}
+      {"type":"sphere","name":"sensor","radius":2,"pos":[10,0,8]}
+      {"type":"cone","name":"nozzle","radius":3,"height":8,"pos":[0,-12,0]}
+
+    engine:
+      - auto (default): Blender if installed, else primitives
+      - blender: require Blender (colorized .blend + STL + GLB)
+      - primitives: pure-Python STL only
+
+    Coordinate system: X right, Y up, Z toward viewer. Units are labels.
+    """
+    if not parts or not isinstance(parts, list):
+        return {"ok": False, "error": "parts must be a non-empty list of part dicts"}
+
+    if len(parts) > 80:
+        return {"ok": False, "error": "too many parts (max 80) — simplify the assembly"}
+
+    eng = (engine or "auto").strip().lower()
+    if eng not in ("auto", "blender", "primitives"):
+        return {"ok": False, "error": f"engine must be auto|blender|primitives, got {engine!r}"}
+
+    use_blender = eng == "blender" or (eng == "auto" and blender_available())
+    if eng == "blender" and not blender_available():
+        eng_info = workshop_engines()
+        return {
+            "ok": False,
+            "error": (
+                "engine=blender requested but Blender is not installed. "
+                "Install from blender.org into /Applications, or use engine=primitives / auto."
+            ),
+            "engines": eng_info.get("engines"),
+            "hint": eng_info.get("hint"),
+        }
+
+    slug = _slug(name)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    project = workshop_dir() / f"{slug}_{stamp}"
+    project.mkdir(parents=True, exist_ok=True)
+    display_title = title or name
+
+    if use_blender:
+        bl = build_with_blender(
+            project=project,
+            slug=slug,
+            title=display_title,
+            parts=parts,
+            units=units,
+        )
+        if not bl.get("ok"):
+            # auto falls back to primitives; hard blender request does not
+            if eng == "auto":
+                prim = _build_primitives(
+                    project, slug, display_title, parts, units, notes
+                )
+                if prim.get("ok"):
+                    prim["blender_fallback_error"] = bl.get("error")
+                    prim["result"] = (
+                        f"(Blender failed → primitives) {prim.get('result')} "
+                        f"Blender error: {bl.get('error')}"
+                    )
+                return prim
+            return bl
+
+        meta = {
+            "name": slug,
+            "title": display_title,
+            "engine": "blender",
+            "units": units,
+            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "part_count": bl.get("part_count"),
+            "parts": bl.get("parts"),
+            "stl": bl.get("stl_path"),
+            "blend": bl.get("blend_path"),
+            "glb": bl.get("glb_path"),
+            "notes": notes or "",
+        }
+        meta_path = project / "model.json"
+        meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+        if notes:
+            (project / "BRIEF.md").write_text(
+                f"# {display_title}\n\n{notes}\n",
+                encoding="utf-8",
+            )
+
+        blend = bl.get("blend_path")
+        stl = bl.get("stl_path")
+        result = {
+            "ok": True,
+            "engine": "blender",
+            "project_dir": str(project),
+            "stl_path": stl,
+            "blend_path": blend,
+            "glb_path": bl.get("glb_path"),
+            "meta_path": str(meta_path),
+            "part_count": bl.get("part_count"),
+            "units": units,
+            "result": (
+                f"Built Blender model '{display_title}' with {bl.get('part_count')} "
+                f"named/colorized parts. "
+                f"Open blend in Blender: {blend}. STL: {stl}. "
+                "Prefer open_file(path=blend_path, app_name='Blender') so you can "
+                "spin the color-coded assembly while explaining parts by name."
+            ),
+        }
+        if open_after and blend:
+            opened = open_file(blend, app_name="Blender")
+            result["opened"] = opened
+        return result
+
+    return _build_primitives(project, slug, display_title, parts, units, notes)
 
 
 def write_design_brief(
