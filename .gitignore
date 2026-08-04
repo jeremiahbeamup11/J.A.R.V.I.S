@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Local secrets / generated work products (do not push)
+certs/
+*.pem
+workshop/
+.claude/

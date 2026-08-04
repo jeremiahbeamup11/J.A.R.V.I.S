@@ -1,54 +1,69 @@
 # Loop State
 
-## Last Completed
-Milestone 9d: Local trust list + per-request routing. VERIFIED.
-- Hard-edge tested (found + fixed a real miss: "what is it like outside"
-  regex gap, now passing).
-- llama3.1:8b baseline: 42/42 tool calls passed across hard edges:
-    argument math (halfway->50, mute->0, max->100, "crank to 80")  6/6
-    ambiguous targets (open the browser, pull up notes)            4/4
-    unusual phrasings (barely hear it, what's it like outside)     5/5
-    multi-tool (volume down and open Spotify) -> tools fire, but
-      these correctly route CLOUD                                  5/5
-- Router decision logic 23/23, with reasons logged:
-    simple single-tool trusted        -> LOCAL  simple_intent:<tool>
-    multi-tool / and|then|also         -> CLOUD  multi_tool_or_complex
-    no intent matched                  -> CLOUD  no_simple_intent_matched
-    tool not trusted locally           -> CLOUD  tool_not_trusted_locally
-- Trust is PER-REQUEST: trusted tools go local only on simple single-tool
-  requests; complex/multi-tool/ambiguous go cloud.
-- LOCAL_TRUSTED_TOOLS editable in one place; remove a tool to demote it.
+## Context
+Base stack is in good shape for product work: dual brain (Ollama + Claude),
+Grok Build for code, Workshop for design STLs, phone remote for iPhone
+control. Cosmetics (persona / calling polish) still deferred by user.
 
-## Known edges (logged, not blocking)
-- Multi-tool detection keys on conjunctions (and/then/also). A comma-only
-  or oddly-phrased multi-step request could leak to local. Fails safe
-  (does one action). Tighten later if real usage shows leakage.
-- run_shortcut is in the trusted set and is the most powerful tool (can
-  trigger any macOS Shortcut). CONFIRM it was exercised in the hard-edge
-  tests. If it was not, treat it as "trusted pending its own test" and
-  consider routing it cloud until verified.
+## Last Completed (this push)
+Capability wave since Milestone 9d:
 
-## Verification Result
-PASSED. Robust two-brain Jarvis with a tested, data-backed local trust
-list and per-request routing.
+### Milestone 10 — Grok Build body (10a–10c)
+- `tools/grok_build.py` + `run_grok_build` tool
+- Allowlist (`GROK_BUILD_ALLOWLIST`), build auto-approved on allowlist
+- Router target `grok` for pure engineering intents
+- Shared `agent.py` (cloud / local / grok); wakeword uses same router
+
+### Milestone 11a — Workshop body
+- `tools/workshop.py`: `build_3d_model` (STL), `write_design_brief`,
+  `open_file`, `reveal_in_finder`
+- `mac_agent` `/open_path` + `/reveal_in_finder` (allowlisted)
+- Design multi-step system prompt (reason → model → brief → open → explain)
+
+### Milestone 12a — Phone remote
+- `static/phone.html` + `phone_api.py` + `/phone` routes on orchestrator
+- Text chat from iPhone over home LAN verified
+- Mic button requires **HTTPS** (iOS secure context); HTTP works with
+  keyboard dictation; ngrok HTTPS for real site mic
+- Optional `JARVIS_PHONE_TOKEN`
+
+### Ops this session
+- Stopped test processes: uvicorn `:8010`, localtunnel
+- Left user ngrok on `:5001` alone (`dense-racing-spectator.ngrok-free.dev`)
+- Docs + .gitignore updated; push to origin/main
 
 ## Current Task
-Milestone 9e: Qwen A/B test (model comparison).
-1. Record current state as the llama3.1:8b baseline (42/42 hard-edge,
-   23/23 routing) — already in this file.
-2. `ollama pull` a current Qwen tool-capable model. Before trusting it,
-   run `ollama show <model>` and confirm "tools" is in Capabilities.
-3. Swap OLLAMA_MODEL to the Qwen model (one-line change — no other code).
-4. Re-run the SAME hard-edge + routing test suite unchanged.
-5. Compare tool-call reliability head to head vs the 42/42 baseline.
-6. Keep whichever model is more reliable. If they tie, prefer the one with
-   lower latency / smaller footprint on this Mac.
+(none — pick next milestone)
 
-VERIFY: show the Qwen tally next to the llama3.1:8b baseline on the SAME
-tests, and state which model is selected and why. I will confirm.
-
-NOTE: this is optional polish on an already-working system. Jarvis is fully
-functional on llama3.1:8b right now.
+## Recommended next (pick one)
+1. **Memory / continuity** — highest daily-use value (STATE backlog #3).
+   Short-term session memory + optional long-term notes so Jarvis remembers
+   projects, preferences, and multi-turn design work.
+2. **Phone mic HTTPS path** — dedicated `ngrok http 8010` (or mkcert LAN
+   HTTPS) + start script so 🎙 works without keyboard workaround.
+3. **10d Grok sessions** — multi-turn Grok Build (`--continue` / session id).
+4. **11b richer CAD** — Blender/OpenSCAD when installed.
+5. **Full base-test pass** — checklist: wakeword, mac_agent, workshop live,
+   phone text, one Grok task (optional before more features).
 
 ## Blocked
 (none)
+
+## How to run (quick)
+```bash
+# Mac body
+uvicorn mac_agent.mac_agent:app --host 127.0.0.1 --port 8765
+
+# Brain + phone UI (LAN)
+uvicorn main:app --host 0.0.0.0 --port 8010
+# iPhone (same Wi‑Fi): http://<Mac-IP>:8010/phone
+
+# Room voice
+python wakeword.py
+
+# Phone mic over HTTPS (repoint ngrok from 5001 if free):
+# ngrok http 8010  →  https://…/phone
+```
+
+## Note
+User deferred language/calling polish. Prefer capability + reliability next.

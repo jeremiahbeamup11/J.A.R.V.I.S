@@ -2,20 +2,20 @@
 Jarvis — Wake Word Loop
 
 Listens continuously for "Hey Jarvis" using OpenWakeWord. On detection,
-records the user's command, transcribes it, runs it through the agent loop,
-and speaks the reply. Then goes back to listening.
+records the user's command, transcribes it, runs it through the shared
+router (local / grok / cloud), and speaks the reply.
 
 Run standalone:
     python wakeword.py
 
-Requires the orchestrator's .env (ANTHROPIC_API_KEY, ELEVENLABS_API_KEY).
-The mac_agent must be running separately if Mac control tools are needed.
+Requires the orchestrator's .env (ANTHROPIC_API_KEY, ELEVENLABS_API_KEY,
+and GROK_BUILD_ALLOWLIST for engineering work). The mac_agent must be
+running separately if Mac control tools are needed.
 """
 
 import os
 import sys
 
-import numpy as np
 import sounddevice as sd
 from dotenv import load_dotenv
 from openwakeword.model import Model as WakeModel
@@ -24,71 +24,13 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from tools import TOOL_SCHEMAS, run_tool  # noqa: E402
+from agent import routed_chat  # noqa: E402
 from tts import speak  # noqa: E402
 from voice import record_audio, transcribe  # noqa: E402
 
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280
 WAKE_THRESHOLD = 0.5
-
-from anthropic import Anthropic  # noqa: E402
-
-MODEL = "claude-sonnet-4-6"
-MAX_TOOL_ROUNDS = 8
-
-SYSTEM_PROMPT = (
-    "You are Jarvis, a concise, capable voice assistant running on a Mac. "
-    "You have direct control over the Mac through your tools: you can open "
-    "apps, set the system volume, control media playback (play, pause, "
-    "next, previous), open URLs in the browser, and run macOS Shortcuts. "
-    "Always use your tools when the user asks you to do "
-    "something you have a tool for — never say you can't do something that "
-    "a tool handles. Keep spoken replies short and natural — you will be "
-    "read aloud. Do not narrate that you are calling tools."
-)
-
-client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
-
-def agent_loop(user_message: str) -> str:
-    """Run the Claude tool-calling loop until a final text answer."""
-    messages = [{"role": "user", "content": user_message}]
-
-    for _ in range(MAX_TOOL_ROUNDS):
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            tools=TOOL_SCHEMAS,
-            messages=messages,
-        )
-
-        if response.stop_reason != "tool_use":
-            return "".join(
-                block.text for block in response.content if block.type == "text"
-            ).strip()
-
-        messages.append({"role": "assistant", "content": response.content})
-
-        tool_results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                try:
-                    result = run_tool(block.name, block.input)
-                except Exception as exc:
-                    result = {"error": f"{type(exc).__name__}: {exc}"}
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": str(result),
-                    }
-                )
-
-        messages.append({"role": "user", "content": tool_results})
-
-    return "Stopped: hit the maximum number of tool rounds."
 
 
 def main():
@@ -118,7 +60,12 @@ def main():
                     continue
 
                 print(f"[JARVIS] You said: {text!r}")
-                reply = agent_loop(text)
+                result = routed_chat(text)
+                reply = result.get("reply") or ""
+                print(
+                    f"[JARVIS] routed_to={result.get('routed_to')} "
+                    f"reason={result.get('reason')} model={result.get('model')}"
+                )
                 print(f"[JARVIS] Reply: {reply}")
                 speak(reply)
                 print("[JARVIS] Ready — say 'Hey Jarvis' to begin.")

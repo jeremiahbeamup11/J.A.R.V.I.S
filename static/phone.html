@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>Jarvis</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121820;
+      --border: #1e2a38;
+      --text: #e8eef6;
+      --muted: #8b9bb0;
+      --accent: #3d9cf0;
+      --accent-dim: #1a4a75;
+      --user: #1a3048;
+      --jarvis: #152018;
+      --danger: #e05a5a;
+      --ok: #3ecf8e;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      display: flex; flex-direction: column;
+      max-width: 640px; margin: 0 auto;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    }
+    header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px;
+    }
+    header h1 {
+      margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: 0.04em;
+    }
+    header .status {
+      font-size: 0.75rem; color: var(--muted);
+      display: flex; align-items: center; gap: 6px;
+    }
+    header .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+    }
+    header .dot.online { background: var(--ok); }
+    header .dot.busy { background: #f0c040; }
+    header .dot.offline { background: var(--danger); }
+
+    #log {
+      flex: 1; overflow-y: auto;
+      padding: 12px 14px 8px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .msg {
+      max-width: 92%;
+      padding: 10px 12px;
+      border-radius: 14px;
+      line-height: 1.4;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--user);
+      border: 1px solid #27405c;
+    }
+    .msg.jarvis {
+      align-self: flex-start;
+      background: var(--jarvis);
+      border: 1px solid #243528;
+    }
+    .msg .meta {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .msg.system {
+      align-self: center;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+      max-width: 100%;
+      border: none;
+      padding: 4px 8px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 10px 12px 12px;
+      background: var(--panel);
+    }
+    .row {
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    #input {
+      flex: 1;
+      min-height: 44px; max-height: 120px;
+      resize: none;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      padding: 11px 12px;
+      font-size: 16px; /* avoid iOS zoom */
+      font-family: inherit;
+    }
+    #input:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent); }
+    button {
+      border: none; border-radius: 12px;
+      min-height: 44px; min-width: 48px;
+      padding: 0 14px;
+      font-size: 0.95rem; font-weight: 600;
+      background: var(--accent); color: #fff;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.45; }
+    button.secondary {
+      background: #243044; color: var(--text);
+    }
+    button.mic {
+      background: #2a2030;
+      min-width: 56px;
+      font-size: 1.2rem;
+    }
+    button.mic.recording {
+      background: var(--danger);
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      50% { opacity: 0.75; }
+    }
+    .opts {
+      display: flex; gap: 12px; align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.78rem; color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .opts label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .opts input[type="checkbox"] { width: 16px; height: 16px; }
+    #tokenBox {
+      display: none;
+      margin-bottom: 8px;
+    }
+    #tokenBox input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+    }
+    #secureBanner {
+      display: none;
+      margin: 0;
+      padding: 10px 14px;
+      background: #3a2210;
+      border-bottom: 1px solid #6a4020;
+      color: #ffd9a8;
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+    #secureBanner strong { color: #fff; }
+    #secureBanner code {
+      font-size: 0.78rem;
+      background: #1a1208;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>J.A.R.V.I.S</h1>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusText">connecting…</span>
+    </div>
+  </header>
+
+  <div id="secureBanner"></div>
+
+  <div id="log"></div>
+
+  <footer>
+    <div id="tokenBox">
+      <input id="token" type="password" placeholder="Access token (if required)" autocomplete="off" />
+    </div>
+    <div class="opts">
+      <label><input type="checkbox" id="speakMac" checked /> Speak on Mac</label>
+      <label><input type="checkbox" id="cloudOnly" /> Cloud only</label>
+      <span id="hint"></span>
+    </div>
+    <div class="row">
+      <button type="button" class="mic secondary" id="mic" title="Hold or tap to talk">🎙</button>
+      <textarea id="input" rows="1" placeholder="Message Jarvis…" enterkeyhint="send"></textarea>
+      <button type="button" id="send">Send</button>
+    </div>
+  </footer>
+
+  <script>
+    const logEl = document.getElementById("log");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+    const micBtn = document.getElementById("mic");
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("statusText");
+    const speakMac = document.getElementById("speakMac");
+    const cloudOnly = document.getElementById("cloudOnly");
+    const tokenBox = document.getElementById("tokenBox");
+    const tokenInput = document.getElementById("token");
+    const hint = document.getElementById("hint");
+    const secureBanner = document.getElementById("secureBanner");
+
+    let busy = false;
+    let mediaRecorder = null;
+    let chunks = [];
+    let recording = false;
+
+    // iOS Safari only allows getUserMedia (mic) in a secure context:
+    // https://… or http://localhost — NOT http://10.x / http://192.168.x
+    const secure = window.isSecureContext === true;
+    const hasMedia =
+      !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+    function micBlockedReason() {
+      if (!secure) {
+        return (
+          "Mic needs HTTPS. This page is plain HTTP, so iPhone Safari blocks " +
+          "the microphone no matter what Settings say. " +
+          "On the Mac run: ngrok http 8010 — then open the https://…/phone URL here. " +
+          "Workaround: tap the text box and use the keyboard mic to dictate, then Send."
+        );
+      }
+      if (!hasMedia) {
+        return "This browser has no microphone API.";
+      }
+      return null;
+    }
+
+    function applyMicGate() {
+      const reason = micBlockedReason();
+      if (!reason) {
+        secureBanner.style.display = "none";
+        micBtn.disabled = false;
+        micBtn.title = "Tap to talk, tap again to send";
+        return;
+      }
+      secureBanner.style.display = "block";
+      secureBanner.innerHTML =
+        "<strong>Microphone blocked (not a Settings issue).</strong> " +
+        "iPhone only allows site mic on <code>https://</code>. " +
+        "On the Mac: <code>ngrok http 8010</code>, then open " +
+        "<code>https://YOUR-NGROK-URL/phone</code>. " +
+        "Until then: tap the message box → keyboard mic → Send.";
+      micBtn.disabled = true;
+      micBtn.title = "Needs HTTPS — use keyboard mic in the text box";
+      addMsg("system", reason);
+    }
+
+    function authHeaders() {
+      const h = {};
+      const t = (tokenInput.value || localStorage.getItem("jarvis_token") || "").trim();
+      if (t) {
+        h["Authorization"] = "Bearer " + t;
+        localStorage.setItem("jarvis_token", t);
+      }
+      return h;
+    }
+
+    function addMsg(role, text, meta) {
+      const div = document.createElement("div");
+      div.className = "msg " + role;
+      div.textContent = text;
+      if (meta) {
+        const m = document.createElement("span");
+        m.className = "meta";
+        m.textContent = meta;
+        div.appendChild(m);
+      }
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(state, text) {
+      dot.className = "dot " + state;
+      statusText.textContent = text;
+    }
+
+    async function ping() {
+      try {
+        const r = await fetch("/phone/api/status", { headers: authHeaders() });
+        if (r.status === 401) {
+          tokenBox.style.display = "block";
+          setStatus("offline", "token required");
+          return;
+        }
+        const data = await r.json();
+        setStatus("online", data.status || "online");
+        if (data.auth_required) tokenBox.style.display = "block";
+        if (data.lan_hint) hint.textContent = data.lan_hint;
+      } catch (e) {
+        setStatus("offline", "offline");
+      }
+    }
+
+    async function sendText(text) {
+      text = (text || "").trim();
+      if (!text || busy) return;
+      busy = true;
+      setStatus("busy", "thinking…");
+      sendBtn.disabled = true;
+      addMsg("user", text);
+      input.value = "";
+      try {
+        const path = cloudOnly.checked ? "/phone/api/chat_cloud" : "/phone/api/chat";
+        const r = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({
+            message: text,
+            speak: speakMac.checked,
+          }),
+        });
+        if (r.status === 401) {
+          tokenBox.style.display = "block";
+          addMsg("system", "Unauthorized — enter access token.");
+          setStatus("offline", "token required");
+          return;
+        }
+        const data = await r.json();
+        if (!r.ok) {
+          addMsg("system", data.detail || data.error || "Request failed");
+          setStatus("online", "error");
+          return;
+        }
+        const meta = [
+          data.routed_to && ("via " + data.routed_to),
+          data.model,
+          data.spoken ? "spoken on Mac" : null,
+        ].filter(Boolean).join(" · ");
+        addMsg("jarvis", data.reply || "(empty reply)", meta);
+        setStatus("online", "ready");
+      } catch (e) {
+        addMsg("system", "Network error: " + e.message);
+        setStatus("offline", "offline");
+      } finally {
+        busy = false;
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener("click", () => sendText(input.value));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendText(input.value);
+      }
+    });
+
+    async function startRec() {
+      if (busy || recording) return;
+      const blocked = micBlockedReason();
+      if (blocked) {
+        addMsg("system", blocked);
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks = [];
+        // Prefer mp4/aac on iOS Safari
+        let mime = "";
+        for (const t of ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm"]) {
+          if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) {
+            mime = t;
+            break;
+          }
+        }
+        const opts = mime ? { mimeType: mime } : undefined;
+        mediaRecorder = new MediaRecorder(stream, opts);
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          const blob = new Blob(chunks, { type: mediaRecorder.mimeType || mime || "audio/mp4" });
+          await sendAudio(blob);
+        };
+        mediaRecorder.start();
+        recording = true;
+        micBtn.classList.add("recording");
+        setStatus("busy", "listening…");
+      } catch (e) {
+        const name = e && e.name ? e.name + ": " : "";
+        let tip = name + (e.message || String(e));
+        if (!secure) {
+          tip += " — page is HTTP; iOS requires HTTPS for mic.";
+        } else if (/NotAllowed|Permission/i.test(String(e))) {
+          tip +=
+            " — In Settings → Safari → Microphone set to Allow, then reload this page " +
+            "and choose Allow when Safari prompts.";
+        }
+        addMsg("system", "Mic error: " + tip);
+      }
+    }
+
+    function stopRec() {
+      if (!recording || !mediaRecorder) return;
+      recording = false;
+      micBtn.classList.remove("recording");
+      try { mediaRecorder.stop(); } catch (_) {}
+    }
+
+    // Tap to toggle record (more reliable on iOS than press-and-hold)
+    micBtn.addEventListener("click", () => {
+      if (recording) stopRec();
+      else startRec();
+    });
+
+    async function sendAudio(blob) {
+      if (busy) return;
+      busy = true;
+      sendBtn.disabled = true;
+      setStatus("busy", "transcribing…");
+      addMsg("system", "Sending voice…");
+      try {
+        const fd = new FormData();
+        const ext = (blob.type || "").includes("mp4") ? "m4a" : "webm";
+        fd.append("audio", blob, "clip." + ext);
+        fd.append("speak", speakMac.checked ? "1" : "0");
+        fd.append("cloud_only", cloudOnly.checked ? "1" : "0");
+        const r = await fetch("/phone/api/voice", {
+          method: "POST",
+          headers: authHeaders(),
+          body: fd,
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          addMsg("system", data.detail || data.error || "Voice failed");
+          setStatus("online", "error");
+          return;
+        }
+        if (data.transcript) addMsg("user", data.transcript, "voice");
+        const meta = [
+          data.routed_to && ("via " + data.routed_to),
+          data.model,
+          data.spoken ? "spoken on Mac" : null,
+        ].filter(Boolean).join(" · ");
+        addMsg("jarvis", data.reply || "(empty)", meta);
+        setStatus("online", "ready");
+      } catch (e) {
+        addMsg("system", "Voice network error: " + e.message);
+        setStatus("offline", "offline");
+      } finally {
+        busy = false;
+        sendBtn.disabled = false;
+      }
+    }
+
+    // Restore token
+    const saved = localStorage.getItem("jarvis_token");
+    if (saved) tokenInput.value = saved;
+    tokenInput.addEventListener("change", () => {
+      localStorage.setItem("jarvis_token", tokenInput.value.trim());
+      ping();
+    });
+
+    addMsg(
+      "system",
+      secure
+        ? "Secure page (HTTPS) — mic button should work after you Allow access."
+        : "Text works on this HTTP link. Mic button needs HTTPS (ngrok)."
+    );
+    applyMicGate();
+    ping();
+    setInterval(ping, 20000);
+  </script>
+</body>
+</html>

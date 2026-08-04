@@ -11,6 +11,14 @@ from datetime import datetime
 
 import requests
 
+from tools.grok_build import run_grok_build  # noqa: F401 — re-export
+from tools.workshop import (  # noqa: F401 — re-export
+    build_3d_model,
+    open_file,
+    reveal_in_finder,
+    write_design_brief,
+)
+
 MAC_AGENT_URL = os.environ.get("MAC_AGENT_URL", "http://localhost:8765")
 
 
@@ -229,6 +237,162 @@ TOOL_SCHEMAS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "run_grok_build",
+        "description": (
+            "Run Grok Build (open-source coding agent) on a local project to "
+            "implement, fix, refactor, scaffold, or explain code. Use this for "
+            "software engineering work. project_path must be under the user's "
+            "GROK_BUILD_ALLOWLIST. mode=build edits files immediately on "
+            "allowlisted paths; mode=ask is read-only analysis. Prefer build "
+            "when the user wants changes made. Pass a clear task and the "
+            "project directory path."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": (
+                        "Clear engineering instruction for Grok Build, e.g. "
+                        "'Add a /health endpoint and tests'."
+                    ),
+                },
+                "project_path": {
+                    "type": "string",
+                    "description": (
+                        "Absolute or ~ path to the project directory. "
+                        "Must be under GROK_BUILD_ALLOWLIST."
+                    ),
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["build", "ask"],
+                    "description": (
+                        "build = implement changes (default, allowlisted paths). "
+                        "ask = read-only analysis / Q&A about the codebase."
+                    ),
+                },
+                "max_turns": {
+                    "type": "integer",
+                    "description": "Optional cap on agent turns (default from env).",
+                    "minimum": 1,
+                    "maximum": 128,
+                },
+            },
+            "required": ["task", "project_path"],
+        },
+    },
+    {
+        "name": "build_3d_model",
+        "description": (
+            "Build a tangible 3D assembly (binary STL) in the workshop folder "
+            "from primitive parts (box, cylinder, sphere, cone). Use this when "
+            "the user wants a physical/visible model of a system, mechanism, "
+            "thermal layout, vehicle concept, etc. After building, call "
+            "open_file (prefer app eDrawings if available) or reveal_in_finder "
+            "so they can see it. Units are labels; choose consistent sizes "
+            "(e.g. cm). Keep assemblies under ~40 parts when possible."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Short project slug, e.g. 'lunar_hopper_thermal'.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Human title for the model.",
+                },
+                "units": {
+                    "type": "string",
+                    "description": "Unit label for the brief, e.g. 'cm' or 'mm'.",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Optional short design notes saved with the model.",
+                },
+                "parts": {
+                    "type": "array",
+                    "description": (
+                        "List of part objects. Each: type (box|cylinder|sphere|cone), "
+                        "optional name, pos [x,y,z], and type-specific size: "
+                        "box size [sx,sy,sz]; cylinder/cone radius+height (+axis for cylinder); "
+                        "sphere radius. Y is up."
+                    ),
+                    "items": {"type": "object"},
+                },
+            },
+            "required": ["name", "parts"],
+        },
+    },
+    {
+        "name": "write_design_brief",
+        "description": (
+            "Write a markdown design brief (explanation, requirements, how the "
+            "system works) into the workshop. Pass project_dir from build_3d_model "
+            "to keep brief + STL together."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Title / slug for the brief.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Markdown body explaining the design.",
+                },
+                "project_dir": {
+                    "type": "string",
+                    "description": "Optional existing workshop project directory.",
+                },
+            },
+            "required": ["name", "content"],
+        },
+    },
+    {
+        "name": "open_file",
+        "description": (
+            "Open a file on the Mac (STL, markdown, etc.) with the default app "
+            "or a named app. Path must be under the workshop allowlist. For STL "
+            "models try app_name 'eDrawings' first (installed on this Mac), else "
+            "omit app_name for Preview/default."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the file to open.",
+                },
+                "app_name": {
+                    "type": "string",
+                    "description": "Optional macOS app name, e.g. 'eDrawings', 'Preview'.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "reveal_in_finder",
+        "description": (
+            "Reveal a workshop file or folder in Finder so the user can grab it, "
+            "AirDrop it, or open it manually."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to reveal.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 # --- Dispatch table --------------------------------------------------------
@@ -241,6 +405,11 @@ TOOL_FUNCTIONS = {
     "media_control": media_control,
     "open_url": open_url,
     "run_shortcut": run_shortcut,
+    "run_grok_build": run_grok_build,
+    "build_3d_model": build_3d_model,
+    "write_design_brief": write_design_brief,
+    "open_file": open_file,
+    "reveal_in_finder": reveal_in_finder,
 }
 
 

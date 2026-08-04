@@ -50,14 +50,16 @@ end-to-end on the cloud brain.
 ## Milestones (in order — do not skip ahead)
 1. [DONE] Text-only Claude tool-calling loop with 2 stub tools.
 2. [DONE] Real tools: get_time() + get_weather(), with error handling.
-3. Mac control agent: a safe listener on the Mac exposing open_app, plus
-   the matching Jarvis tool. Verify Jarvis actually opens a Mac app.
-4. Expand Mac tools: set_volume, run_shortcut, media controls.
-5. Voice input: faster-whisper transcribes mic -> text.
-6. Voice output: ElevenLabs speaks Jarvis's reply.
-7. Wake word: "Jarvis" triggers the listen loop.
+3. [DONE] Mac control agent: open_app + matching Jarvis tool.
+4. [DONE] Expand Mac tools: set_volume, run_shortcut, media, open_url.
+5. [DONE] Voice input: faster-whisper transcribes mic -> text.
+6. [DONE] Voice output: ElevenLabs speaks Jarvis's reply.
+7. [DONE] Wake word: "Hey Jarvis" (OpenWakeWord).
 8. (LATER) ESP32 device bridge for custom hardware.
-9. (PHASE 2) Optional local-brain tier on the Mac.
+9. [DONE / ACTIVE] Optional local-brain tier on the Mac (Ollama router).
+10. [DONE] Grok Build engineering body (see Milestone 10 below).
+11. [DONE 11a] Workshop body — design briefs + 3D STL + open on Mac.
+12. [DONE 12a] Phone remote — iPhone text control over LAN (/phone).
 
 ## Definition of Done (per milestone)
 Done only when it runs end-to-end and is verified by an actual command,
@@ -101,3 +103,85 @@ Milestones:
 Hardware note: runs on the MacBook, uses real RAM, warms it up. Local tier
 only available when the Mac is awake + Ollama running. Mac away => cloud
 only. Existing error-handling makes this graceful.
+
+## Milestone 10 — Grok Build engineering body [DONE 10a–10c]
+Goal: Jarvis can help build real software products by dispatching work to
+open-source Grok Build, without giving Jarvis a raw shell.
+
+Architecture fit:
+- Claude remains the primary brain for mixed / ambiguous requests.
+- Pure engineering intents route STRAIGHT to Grok Build (no Claude hop).
+- Claude can still call `run_grok_build` as a tool when engineering is
+  mixed with other assistant work.
+- Ollama never receives `run_grok_build` (too long / high-stakes).
+
+Safety:
+- CWD must resolve under `GROK_BUILD_ALLOWLIST` (custom comma-separated
+  list in `.env`). Outside the list → refuse.
+- `mode=build` is allowed immediately on allowlisted paths (user policy).
+- `mode=ask` is read-only (`--tools` allowlist of read/search tools).
+- Invocation is a fixed `grok -p ...` command with enumerated flags only.
+
+Config (see `.env.example`):
+- `GROK_BUILD_ALLOWLIST` — required for any Grok work
+- `GROK_BUILD_DEFAULT_CWD` — optional default project when path omitted
+- `GROK_BIN`, `GROK_BUILD_MAX_TURNS`, `GROK_BUILD_TIMEOUT_SEC` — optional
+
+Router targets: `local` | `grok` | `cloud`
+
+Milestones:
+- 10a: [DONE] Tool `run_grok_build(task, project_path, mode)` + JSON headless
+- 10b: [DONE] Custom allowlist path validation
+- 10c: [DONE] build vs ask modes; build auto-approved on allowlist
+- 10d: (NEXT) session continuity (`--continue` / session id) for multi-turn
+- 10e: (LATER) tighter engineering classifier / path disambiguation UI
+
+## Milestone 11 — Workshop body (design + tangible models) [ACTIVE]
+Goal: when you ask Jarvis *how to make X work* or to design a system, it
+does not only talk — it opens Mac tools and produces work products you
+can see (and later 3D-print / hand to CAD).
+
+Pattern (multi-tool Claude orchestration, always cloud):
+  reason → build_3d_model (STL) → write_design_brief → open_file / Finder
+  → explain while pointing at the model
+
+v1 geometry: pure-Python binary STL from primitives (box, cylinder,
+sphere, cone). No Blender required. Open with eDrawings (installed) or
+Preview. Files land under WORKSHOP_DIR (default ~/Desktop/JARVIS/workshop).
+
+Safety:
+- Artifacts only under workshop / OPEN_PATH_ALLOWLIST / Desktop/JARVIS
+- mac_agent open_path + reveal_in_finder are enumerated endpoints
+- No raw shell; no arbitrary file write outside workshop
+
+Milestones:
+- 11a: [DONE] build_3d_model + brief + open_file/reveal + system-prompt workflow
+- 11b: (NEXT) richer CAD path — Blender/OpenSCAD/CadQuery when installed;
+      export STEP; named materials/labels in a side viewer
+- 11c: (LATER) app-specific drivers (Keynote slides, Rotato, etc.) as
+      additional workshop tools
+- 11d: (LATER) voice-safe confirm before long workshop builds
+
+## Milestone 12 — Phone remote (iPhone client) [DONE 12a]
+Goal: control Jarvis from the iPhone while the Mac runs the brain + bodies.
+
+- UI: `GET /phone` → `static/phone.html` (mobile Safari / Add to Home Screen)
+- API: `/phone/api/status`, `/chat`, `/chat_cloud`, `/voice` (audio upload)
+- Optional auth: `JARVIS_PHONE_TOKEN` (Bearer)
+- **Home Wi‑Fi:** `http://<Mac-LAN-IP>:8010/phone` (text works)
+- **Mic button:** requires HTTPS (iOS secure context). Use ngrok
+  `ngrok http 8010` → `https://…/phone`, or keyboard dictation on HTTP.
+- **Hotspot/car:** LAN IP often fails; use ngrok HTTPS.
+- Speak-on-Mac toggle: phone can trigger ElevenLabs on the laptop speakers.
+
+Milestones:
+- 12a: [DONE] Phone UI + chat APIs + LAN verify + HTTPS mic guidance
+- 12b: (NEXT) one-command start script; dedicated ngrok/HTTPS for mic
+- 12c: (LATER) push notifications / always-on host when Mac is elsewhere
+
+## Roadmap priority after 12a (capability first)
+1. Memory / continuity across turns and days
+2. Phone mic reliability (HTTPS path)
+3. Grok multi-turn sessions (10d)
+4. Richer CAD / app drivers (11b–11c)
+5. ESP32 body (milestone 8) when hardware week returns
