@@ -27,6 +27,13 @@ from tools.grok_build import (
     resolve_project_path,
     run_grok_build,
 )
+from memory import (
+    anthropic_history_messages,
+    build_system_appendix,
+    load_long_term,
+    ollama_history_messages,
+    record_turn,
+)
 
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -56,6 +63,11 @@ SYSTEM_PROMPT = (
     "unless the user only wants a pure verbal answer.\n\n"
     "Software engineering: use run_grok_build for implement/fix/refactor/"
     "scaffold/tests on allowlisted code projects.\n\n"
+    "Memory: You have short-term session history in the messages, and "
+    "long-term memory tools (remember, recall, forget, set_active_project, "
+    "set_preference). Persist lasting facts and preferences with remember. "
+    "Never store secrets. Use prior conversation context naturally — do not "
+    "pretend amnesia about what was just said.\n\n"
     "Always use tools when they apply — never claim you cannot do something "
     "a tool handles. Do not narrate that you are calling tools.\n\n"
     "Reply length: short for commands; full explanations for design/teach. "
@@ -185,15 +197,19 @@ def route(message: str) -> tuple[str, str]:
 
 # --- Cloud brain (Claude) -------------------------------------------------
 
-def agent_loop(user_message: str) -> tuple[str, str]:
+def agent_loop(user_message: str, *, use_memory: bool = True) -> tuple[str, str]:
     """Run the Claude tool-calling loop. Returns (reply_text, stop_reason)."""
-    messages = [{"role": "user", "content": user_message}]
+    system = SYSTEM_PROMPT + (build_system_appendix() if use_memory else "")
+    messages: list[dict] = []
+    if use_memory:
+        messages.extend(anthropic_history_messages())
+    messages.append({"role": "user", "content": user_message})
 
     for _ in range(MAX_TOOL_ROUNDS):
         response = client.messages.create(
             model=MODEL,
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system,
             tools=TOOL_SCHEMAS,
             messages=messages,
         )
@@ -202,6 +218,12 @@ def agent_loop(user_message: str) -> tuple[str, str]:
             text = "".join(
                 block.text for block in response.content if block.type == "text"
             ).strip()
+            if use_memory:
+                record_turn(
+                    user_message,
+                    text,
+                    {"routed_to": "cloud", "model": MODEL},
+                )
             return text, response.stop_reason
 
         messages.append({"role": "assistant", "content": response.content})
@@ -213,6 +235,9 @@ def agent_loop(user_message: str) -> tuple[str, str]:
                     result = run_tool(block.name, block.input)
                 except Exception as exc:
                     result = {"error": f"{type(exc).__name__}: {exc}"}
+                # Keep active project in sync when Grok/workshop touch a path
+                if use_memory and block.name in ("run_grok_build", "build_3d_model"):
+                    _maybe_capture_project(block.name, block.input, result)
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -223,7 +248,28 @@ def agent_loop(user_message: str) -> tuple[str, str]:
 
         messages.append({"role": "user", "content": tool_results})
 
-    return "Stopped: hit the maximum number of tool rounds.", "max_rounds"
+    text = "Stopped: hit the maximum number of tool rounds."
+    if use_memory:
+        record_turn(user_message, text, {"routed_to": "cloud", "model": MODEL})
+    return text, "max_rounds"
+
+
+def _maybe_capture_project(tool_name: str, tool_input: dict, result: dict) -> None:
+    """Best-effort: set active project from successful tool outputs."""
+    try:
+        from memory import set_active_project
+
+        if not isinstance(result, dict) or not result.get("ok"):
+            return
+        path = None
+        if tool_name == "run_grok_build":
+            path = result.get("project_path") or (tool_input or {}).get("project_path")
+        elif tool_name == "build_3d_model":
+            path = result.get("project_dir")
+        if path:
+            set_active_project(str(path))
+    except Exception:
+        pass
 
 
 # --- Local brain (Ollama) -------------------------------------------------
@@ -237,6 +283,12 @@ def _anthropic_to_ollama_tools(schemas: list[dict]) -> list[dict]:
         "write_design_brief",
         "open_file",
         "reveal_in_finder",
+        # Memory tools stay on cloud (better judgment about what to store)
+        "remember",
+        "recall",
+        "forget",
+        "set_active_project",
+        "set_preference",
     }
     return [
         {
@@ -274,12 +326,25 @@ def _ollama_chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
     return resp.json()
 
 
-def agent_loop_local(user_message: str) -> str:
+def agent_loop_local(user_message: str, *, use_memory: bool = True) -> str:
     """Run the local Ollama tool-calling loop until a final text answer."""
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_message},
-    ]
+    system = SYSTEM_PROMPT
+    if use_memory:
+        # Compact: prefs + active project only (keep local prompts small)
+        lt = load_long_term()
+        bits = []
+        if lt.get("active_project"):
+            bits.append(f"Active project: {lt['active_project']}")
+        prefs = lt.get("preferences") or {}
+        if prefs:
+            bits.append("Preferences: " + ", ".join(f"{k}={v}" for k, v in list(prefs.items())[:8]))
+        if bits:
+            system = system + "\n\n## Context\n" + "\n".join(bits)
+
+    messages: list[dict] = [{"role": "system", "content": system}]
+    if use_memory:
+        messages.extend(ollama_history_messages(max_pairs=3))
+    messages.append({"role": "user", "content": user_message})
 
     for _ in range(MAX_TOOL_ROUNDS):
         data = _ollama_chat(messages, tools=_OLLAMA_TOOLS)
@@ -287,7 +352,14 @@ def agent_loop_local(user_message: str) -> str:
 
         tool_calls = msg.get("tool_calls")
         if not tool_calls:
-            return (msg.get("content") or "").strip()
+            text = (msg.get("content") or "").strip()
+            if use_memory:
+                record_turn(
+                    user_message,
+                    text,
+                    {"routed_to": "local", "model": OLLAMA_MODEL},
+                )
+            return text
 
         messages.append(msg)
 
@@ -301,7 +373,10 @@ def agent_loop_local(user_message: str) -> str:
                 result = {"error": f"{type(exc).__name__}: {exc}"}
             messages.append({"role": "tool", "content": str(result)})
 
-    return "Stopped: hit the maximum number of tool rounds."
+    text = "Stopped: hit the maximum number of tool rounds."
+    if use_memory:
+        record_turn(user_message, text, {"routed_to": "local", "model": OLLAMA_MODEL})
+    return text
 
 
 # --- Grok Build direct path -----------------------------------------------
@@ -309,7 +384,14 @@ def agent_loop_local(user_message: str) -> str:
 def _resolve_engineering_cwd(user_message: str) -> tuple[str | None, str | None]:
     """Pick project_path for a direct Grok route. Returns (path, error)."""
     extracted = extract_path_from_text(user_message)
-    candidate = extracted or (default_cwd() or None)
+    active = None
+    try:
+        ap = load_long_term().get("active_project")
+        if ap and ("/" in str(ap) or str(ap).startswith("~")):
+            active = str(ap)
+    except Exception:
+        pass
+    candidate = extracted or active or (default_cwd() or None)
     path, err = resolve_project_path(candidate)
     if err:
         return None, err
@@ -460,6 +542,22 @@ def routed_chat(user_message: str) -> dict:
         elif model_used == "grok-build":
             routed_to = "grok"
 
+    # Grok path does not go through agent_loop — record session turn here.
+    # Cloud/local already record inside their loops.
+    if reply is not None and routed_to == "grok":
+        record_turn(
+            user_message,
+            reply,
+            {"routed_to": "grok", "model": model_used, "reason": reason},
+        )
+        if grok_meta and grok_meta.get("ok") and grok_meta.get("project_path"):
+            try:
+                from memory import set_active_project
+
+                set_active_project(str(grok_meta["project_path"]))
+            except Exception:
+                pass
+
     out = {
         "reply": reply,
         "routed_to": routed_to,
@@ -476,4 +574,16 @@ def routed_chat(user_message: str) -> dict:
             "session_id": grok_meta.get("session_id"),
             "num_turns": grok_meta.get("num_turns"),
         }
+    try:
+        from memory import status as memory_status
+
+        ms = memory_status()
+        out["memory"] = {
+            "session_id": ms.get("session_id"),
+            "session_turns": ms.get("session_turns"),
+            "long_term_notes": ms.get("long_term_notes"),
+            "active_project": ms.get("active_project"),
+        }
+    except Exception:
+        pass
     return out

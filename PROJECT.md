@@ -60,6 +60,7 @@ end-to-end on the cloud brain.
 10. [DONE] Grok Build engineering body (see Milestone 10 below).
 11. [DONE 11a] Workshop body — design briefs + 3D STL + open on Mac.
 12. [DONE 12a] Phone remote — iPhone text control over LAN (/phone).
+13. [DONE 13a] Memory — session continuity + long-term notes.
 
 ## Definition of Done (per milestone)
 Done only when it runs end-to-end and is verified by an actual command,
@@ -179,9 +180,32 @@ Milestones:
 - 12b: (NEXT) one-command start script; dedicated ngrok/HTTPS for mic
 - 12c: (LATER) push notifications / always-on host when Mac is elsewhere
 
-## Roadmap priority after 12a (capability first)
-1. Memory / continuity across turns and days
-2. Phone mic reliability (HTTPS path)
-3. Grok multi-turn sessions (10d)
-4. Richer CAD / app drivers (11b–11c)
-5. ESP32 body (milestone 8) when hardware week returns
+## Milestone 13 — Memory / continuity [DONE 13a]
+Goal: Jarvis remembers the conversation and lasting facts so multi-turn
+work (phone, wake word, API) does not reset every message.
+
+Layers:
+1. **Session** — rolling user/assistant turns on disk (`session.json`).
+   Injected into Claude history; compact recent pairs for Ollama.
+   Rotates after MEMORY_SESSION_IDLE_MINUTES idle.
+2. **Long-term** — notes / preferences / active project (`long_term.json`).
+   Tools: remember, recall, forget, set_active_project, set_preference.
+3. **Auto context** — successful Grok/workshop paths set active_project;
+   Grok routing falls back to active project path when none is spoken.
+
+Storage: `MEMORY_DIR` (default `~/Desktop/JARVIS/data/memory/`). Not in git.
+
+HTTP: `GET /memory`, `POST /memory/clear_session`,
+`POST /memory/remember`, `POST /memory/recall`.
+
+Milestones:
+- 13a: [DONE] session + long-term + tools + agent injection + APIs
+- 13b: (LATER) per-client session ids (phone vs wakeword vs API)
+- 13c: (LATER) smarter auto-summaries of long sessions
+
+## Roadmap priority after 13a (capability first)
+1. Phone mic reliability (HTTPS path / 12b)
+2. Grok multi-turn sessions (10d)
+3. Richer CAD / app drivers (11b–11c)
+4. ESP32 body (milestone 8) when hardware week returns
+5. Per-client memory sessions (13b)

@@ -18,8 +18,30 @@ from tools.workshop import (  # noqa: F401 — re-export
     reveal_in_finder,
     write_design_brief,
 )
+from memory import (  # noqa: F401 — re-export
+    forget,
+    recall,
+    remember,
+    set_active_project,
+    set_preference,
+)
 
 MAC_AGENT_URL = os.environ.get("MAC_AGENT_URL", "http://localhost:8765")
+
+
+def _normalize_tags(tags) -> list[str] | None:
+    if tags is None:
+        return None
+    if isinstance(tags, str):
+        return [t.strip() for t in tags.split(",") if t.strip()]
+    if isinstance(tags, list):
+        return [str(t).strip() for t in tags if str(t).strip()]
+    return None
+
+
+def remember_fact(content: str, tags=None, category: str = "note") -> dict:
+    """Tool wrapper for durable memory notes."""
+    return remember(content=content, tags=_normalize_tags(tags), category=category or "note")
 
 
 def get_time() -> dict:
@@ -393,6 +415,102 @@ TOOL_SCHEMAS = [
             "required": ["path"],
         },
     },
+    {
+        "name": "remember",
+        "description": (
+            "Save a durable fact to long-term memory (survives restarts). "
+            "Use for lasting preferences, project names/paths, decisions, "
+            "people, or facts the user wants you to keep. Do NOT store "
+            "passwords or API keys. category: note|preference|project|person."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "What to remember, in a clear short sentence.",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional tags, e.g. ['lunar', 'thermal'].",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["note", "preference", "project", "person"],
+                    "description": "note (default), preference, project, or person.",
+                },
+            },
+            "required": ["content"],
+        },
+    },
+    {
+        "name": "recall",
+        "description": (
+            "Search long-term memory. Empty query returns recent notes plus "
+            "active project and preferences. Use when the user asks what you "
+            "remember or refers to past work."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search text; omit for recent memories.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max notes to return (default 10).",
+                    "minimum": 1,
+                    "maximum": 50,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "forget",
+        "description": "Delete a long-term memory note by its id (from recall).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "note_id": {
+                    "type": "string",
+                    "description": "The note id to remove.",
+                },
+            },
+            "required": ["note_id"],
+        },
+    },
+    {
+        "name": "set_active_project",
+        "description": (
+            "Set or clear the active project path/name used as default context "
+            "for engineering and design work. Pass empty string to clear."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path_or_name": {
+                    "type": "string",
+                    "description": "Project path or name; empty to clear.",
+                },
+            },
+            "required": ["path_or_name"],
+        },
+    },
+    {
+        "name": "set_preference",
+        "description": "Store a key/value preference (e.g. city=Austin, voice=short).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Preference name."},
+                "value": {"type": "string", "description": "Preference value."},
+            },
+            "required": ["key", "value"],
+        },
+    },
 ]
 
 # --- Dispatch table --------------------------------------------------------
@@ -410,6 +528,11 @@ TOOL_FUNCTIONS = {
     "write_design_brief": write_design_brief,
     "open_file": open_file,
     "reveal_in_finder": reveal_in_finder,
+    "remember": remember_fact,
+    "recall": recall,
+    "forget": forget,
+    "set_active_project": set_active_project,
+    "set_preference": set_preference,
 }
 
 
@@ -418,4 +541,8 @@ def run_tool(name: str, tool_input: dict) -> dict:
     fn = TOOL_FUNCTIONS.get(name)
     if fn is None:
         return {"error": f"unknown tool: {name}"}
-    return fn(**tool_input)
+    args = dict(tool_input or {})
+    try:
+        return fn(**args)
+    except TypeError as exc:
+        return {"error": f"bad tool args for {name}: {exc}"}

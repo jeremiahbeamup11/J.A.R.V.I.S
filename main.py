@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from agent import MODEL, OLLAMA_MODEL, agent_loop, agent_loop_local, routed_chat
+from memory import clear_session, recall, remember, status as memory_status
 from phone_api import (
     audio_to_wav,
     auth_required,
@@ -61,13 +62,58 @@ def _maybe_speak(text: str, do_speak: bool) -> bool:
 
 @app.get("/")
 def health():
+    try:
+        mem = memory_status()
+    except Exception:
+        mem = {"ok": False}
     return {
         "status": "jarvis online",
         "phone": "/phone",
         "hotspot_like": is_hotspot_like(),
         "ips": lan_ips(),
         "hint": preferred_lan_hint(PHONE_PORT),
+        "memory": {
+            "session_turns": mem.get("session_turns"),
+            "long_term_notes": mem.get("long_term_notes"),
+            "active_project": mem.get("active_project"),
+        },
     }
+
+
+# --- Memory admin ----------------------------------------------------------
+
+@app.get("/memory")
+def memory_get():
+    """Session + long-term memory status."""
+    return memory_status()
+
+
+@app.post("/memory/clear_session")
+def memory_clear_session():
+    """Start a fresh short-term session (keeps long-term notes)."""
+    return clear_session()
+
+
+class RememberRequest(BaseModel):
+    content: str
+    tags: list[str] | None = None
+    category: str = "note"
+
+
+@app.post("/memory/remember")
+def memory_remember(req: RememberRequest):
+    """Manually add a long-term note (same as the remember tool)."""
+    return remember(content=req.content, tags=req.tags, category=req.category)
+
+
+class RecallRequest(BaseModel):
+    query: str | None = None
+    limit: int = 10
+
+
+@app.post("/memory/recall")
+def memory_recall(req: RecallRequest):
+    return recall(query=req.query, limit=req.limit)
 
 
 @app.post("/chat")
