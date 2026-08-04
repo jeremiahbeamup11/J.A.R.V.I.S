@@ -134,7 +134,10 @@ Milestones:
 - 10a: [DONE] Tool `run_grok_build(task, project_path, mode)` + JSON headless
 - 10b: [DONE] Custom allowlist path validation
 - 10c: [DONE] build vs ask modes; build auto-approved on allowlist
-- 10d: (NEXT) session continuity (`--continue` / session id) for multi-turn
+- 10d: [DONE] multi-turn sessions — per-project session registry +
+      `continue_session` (default true) resumes via `grok -r <sessionId>`;
+      `new_session` / `clear_grok_session` for fresh starts; HTTP
+      `GET /grok/sessions`, `POST /grok/sessions/clear`
 - 10e: (LATER) tighter engineering classifier / path disambiguation UI
 
 ## Milestone 11 — Workshop body (design + tangible models) [ACTIVE]
@@ -203,9 +206,9 @@ Milestones:
 - 13b: (LATER) per-client session ids (phone vs wakeword vs API)
 - 13c: (LATER) smarter auto-summaries of long sessions
 
-## Roadmap priority after 13a (capability first)
+## Roadmap priority after 10d (capability first)
 1. Phone mic reliability (HTTPS path / 12b)
-2. Grok multi-turn sessions (10d)
-3. Richer CAD / app drivers (11b–11c)
-4. ESP32 body (milestone 8) when hardware week returns
-5. Per-client memory sessions (13b)
+2. Richer CAD / app drivers (11b–11c)
+3. ESP32 body (milestone 8) when hardware week returns
+4. Per-client memory sessions (13b)
+5. Grok session classifier polish (10e)

@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from agent import MODEL, OLLAMA_MODEL, agent_loop, agent_loop_local, routed_chat
 from memory import clear_session, recall, remember, status as memory_status
+from tools.grok_build import clear_grok_session, list_grok_sessions
 from phone_api import (
     audio_to_wav,
     auth_required,
@@ -114,6 +115,25 @@ class RecallRequest(BaseModel):
 @app.post("/memory/recall")
 def memory_recall(req: RecallRequest):
     return recall(query=req.query, limit=req.limit)
+
+
+# --- Grok multi-turn sessions (Milestone 10d) ------------------------------
+
+@app.get("/grok/sessions")
+def grok_sessions_list():
+    """List per-project Grok Build sessions Jarvis will resume."""
+    return list_grok_sessions()
+
+
+class ClearGrokSessionRequest(BaseModel):
+    project_path: str | None = None
+
+
+@app.post("/grok/sessions/clear")
+def grok_sessions_clear(req: ClearGrokSessionRequest | None = None):
+    """Clear one project session (or all if path omitted)."""
+    path = req.project_path if req else None
+    return clear_grok_session(path)
 
 
 @app.post("/chat")

@@ -11,7 +11,11 @@ from datetime import datetime
 
 import requests
 
-from tools.grok_build import run_grok_build  # noqa: F401 — re-export
+from tools.grok_build import (  # noqa: F401 — re-export
+    clear_grok_session,
+    list_grok_sessions,
+    run_grok_build,
+)
 from tools.workshop import (  # noqa: F401 — re-export
     build_3d_model,
     open_file,
@@ -266,9 +270,11 @@ TOOL_SCHEMAS = [
             "implement, fix, refactor, scaffold, or explain code. Use this for "
             "software engineering work. project_path must be under the user's "
             "GROK_BUILD_ALLOWLIST. mode=build edits files immediately on "
-            "allowlisted paths; mode=ask is read-only analysis. Prefer build "
-            "when the user wants changes made. Pass a clear task and the "
-            "project directory path."
+            "allowlisted paths; mode=ask is read-only analysis. "
+            "MULTI-TURN: continue_session=true (default) resumes the last Grok "
+            "session for that project so follow-ups keep full context. Set "
+            "new_session=true only when starting a fresh unrelated task on "
+            "the same repo. Prefer build when the user wants changes made."
         ),
         "input_schema": {
             "type": "object",
@@ -301,8 +307,58 @@ TOOL_SCHEMAS = [
                     "minimum": 1,
                     "maximum": 128,
                 },
+                "continue_session": {
+                    "type": "boolean",
+                    "description": (
+                        "Resume the stored Grok session for this project "
+                        "(default true). Keeps multi-step product build context."
+                    ),
+                },
+                "new_session": {
+                    "type": "boolean",
+                    "description": (
+                        "Force a brand-new Grok session (ignores prior context). "
+                        "Use when switching to an unrelated task on the same path."
+                    ),
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional explicit Grok session UUID to resume. "
+                        "Usually omit — registry handles this."
+                    ),
+                },
             },
             "required": ["task", "project_path"],
+        },
+    },
+    {
+        "name": "list_grok_sessions",
+        "description": (
+            "List active Grok Build multi-turn sessions (project path → session id). "
+            "Use when the user asks which engineering sessions are open."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "clear_grok_session",
+        "description": (
+            "Clear stored Grok multi-turn session for a project path, or all "
+            "sessions if path is empty. Next run_grok_build starts fresh."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_path": {
+                    "type": "string",
+                    "description": "Project path to clear; omit/empty for all.",
+                },
+            },
+            "required": [],
         },
     },
     {
@@ -524,6 +580,8 @@ TOOL_FUNCTIONS = {
     "open_url": open_url,
     "run_shortcut": run_shortcut,
     "run_grok_build": run_grok_build,
+    "list_grok_sessions": list_grok_sessions,
+    "clear_grok_session": clear_grok_session,
     "build_3d_model": build_3d_model,
     "write_design_brief": write_design_brief,
     "open_file": open_file,

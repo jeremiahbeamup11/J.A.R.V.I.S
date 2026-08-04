@@ -62,7 +62,11 @@ SYSTEM_PROMPT = (
     "Always do steps 2–4 for design/how-do-we-build/physical-system questions "
     "unless the user only wants a pure verbal answer.\n\n"
     "Software engineering: use run_grok_build for implement/fix/refactor/"
-    "scaffold/tests on allowlisted code projects.\n\n"
+    "scaffold/tests on allowlisted code projects. Multi-step product builds: "
+    "keep continue_session=true (default) so Grok remembers prior steps on "
+    "that project; only set new_session=true for an unrelated new task. "
+    "Use list_grok_sessions / clear_grok_session when the user asks to "
+    "show or reset engineering sessions.\n\n"
     "Memory: You have short-term session history in the messages, and "
     "long-term memory tools (remember, recall, forget, set_active_project, "
     "set_preference). Persist lasting facts and preferences with remember. "
@@ -141,6 +145,23 @@ _ENGINEERING_PATTERNS = [
     ),
     re.compile(
         r"\b(write|add|generate)\b.+\b(tests?|specs?)\b.+\b(for|to|in)\b",
+        re.I,
+    ),
+    # Multi-step product build follow-ups (keep routing to Grok)
+    re.compile(
+        r"\b(continue|keep going|next step|same (project|repo|codebase))\b.+\b("
+        r"build|code|implement|fix|refactor|test|feature|endpoint"
+        r")\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(now|then|also)\b.+\b(add|implement|fix|write|refactor|scaffold)\b.+\b("
+        r"test|endpoint|feature|module|function|class|api|component"
+        r")\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(continue (the |that |our )?(build|work|implementation|refactor|session))\b",
         re.I,
     ),
 ]
@@ -279,6 +300,8 @@ def _anthropic_to_ollama_tools(schemas: list[dict]) -> list[dict]:
     # Local brain: only simple trusted tools (no Grok, no workshop multi-step).
     _local_skip = {
         "run_grok_build",
+        "list_grok_sessions",
+        "clear_grok_session",
         "build_3d_model",
         "write_design_brief",
         "open_file",
@@ -398,8 +421,18 @@ def _resolve_engineering_cwd(user_message: str) -> tuple[str | None, str | None]
     return str(path), None
 
 
-def agent_loop_grok(user_message: str, mode: str = "build") -> tuple[str, dict]:
-    """Run Grok Build headlessly. Returns (spoken_summary, raw_result)."""
+def agent_loop_grok(
+    user_message: str,
+    mode: str = "build",
+    *,
+    continue_session: bool = True,
+    new_session: bool = False,
+) -> tuple[str, dict]:
+    """Run Grok Build headlessly. Returns (spoken_summary, raw_result).
+
+    continue_session=True resumes the per-project Grok session (Milestone 10d)
+    so multi-step product builds keep full agent context.
+    """
     project_path, err = _resolve_engineering_cwd(user_message)
     if err:
         # No valid cwd — caller should fall back to Claude.
@@ -409,6 +442,8 @@ def agent_loop_grok(user_message: str, mode: str = "build") -> tuple[str, dict]:
         task=user_message,
         project_path=project_path,
         mode=mode,
+        continue_session=continue_session,
+        new_session=new_session,
     )
 
     if not result.get("ok"):
@@ -425,6 +460,12 @@ def agent_loop_grok(user_message: str, mode: str = "build") -> tuple[str, dict]:
         summary = body if len(body) <= 1200 else body[:1200] + "…"
     else:
         summary = f"Grok Build finished on {result.get('project_path')}."
+
+    # Mention continuity so voice users know context was kept
+    if result.get("continued"):
+        summary = f"(continued Grok session) {summary}"
+    elif result.get("session_id"):
+        summary = f"(new Grok session saved) {summary}"
     return summary, result
 
 
@@ -573,6 +614,9 @@ def routed_chat(user_message: str) -> dict:
             "mode": grok_meta.get("mode"),
             "session_id": grok_meta.get("session_id"),
             "num_turns": grok_meta.get("num_turns"),
+            "continued": grok_meta.get("continued"),
+            "session_mode": grok_meta.get("session_mode"),
+            "session_saved": grok_meta.get("session_saved"),
         }
     try:
         from memory import status as memory_status
