@@ -192,8 +192,20 @@ Goal: control Jarvis from the iPhone while the Mac runs the brain + bodies.
 
 Milestones:
 - 12a: [DONE] Phone UI + chat APIs + LAN verify + HTTPS mic guidance
-- 12b: (NEXT) one-command start script; dedicated ngrok/HTTPS for mic
+- 12b: [DONE] `./start_jarvis.sh` full stack + `--phone-https` (ngrok)
+      for iPhone site mic; `./stop_jarvis.sh` to tear down
 - 12c: (LATER) push notifications / always-on host when Mac is elsewhere
+
+## Ops — start / stop (12b)
+```bash
+cd ~/Desktop/JARVIS
+./start_jarvis.sh                 # mac_agent + API + wakeword
+./start_jarvis.sh --phone-https   # + ngrok HTTPS URL for iPhone 🎙
+./stop_jarvis.sh
+```
+Logs/pids: `data/logs/`, `data/run/`.  
+If ngrok fails with ERR_NGROK_334, stop the other tunnel (e.g. port 5001)
+so the free account can bind a URL to Jarvis.
 
 ## Milestone 13 — Memory / continuity [DONE 13a]
 Goal: Jarvis remembers the conversation and lasting facts so multi-turn
@@ -218,9 +230,9 @@ Milestones:
 - 13b: (LATER) per-client session ids (phone vs wakeword vs API)
 - 13c: (LATER) smarter auto-summaries of long sessions
 
-## Roadmap priority after 10d (capability first)
-1. Phone mic reliability (HTTPS path / 12b)
-2. Richer CAD / app drivers (11b–11c)
-3. ESP32 body (milestone 8) when hardware week returns
-4. Per-client memory sessions (13b)
-5. Grok session classifier polish (10e)
+## Roadmap priority (capability first)
+1. [NEXT] Workshop model quality (templates + richer parts + layout rules)
+2. ESP32 body (milestone 8) when hardware week returns
+3. Per-client memory sessions (13b)
+4. Grok session classifier polish (10e)
+5. Persona / calling cosmetics (deferred)

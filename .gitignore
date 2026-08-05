@@ -11,3 +11,4 @@ certs/
 workshop/
 .claude/
 data/
+# but allow empty run/logs dirs via scripts (runtime only)

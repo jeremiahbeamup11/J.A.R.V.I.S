@@ -80,7 +80,8 @@ def preferred_lan_hint(port: int = 8010) -> str:
     if is_hotspot_like():
         return (
             f"Hotspot/tether detected — phone usually cannot open the Mac by LAN IP. "
-            f"Use ngrok: `ngrok http {port}` then open https://YOUR-URL/phone on the iPhone."
+            f"Start with HTTPS: `./start_jarvis.sh --phone-https` then open the "
+            f"printed https://…/phone URL (required for the 🎙 mic button)."
         )
     ips = lan_ips()
     private = [
@@ -97,9 +98,12 @@ def preferred_lan_hint(port: int = 8010) -> str:
     home = [ip for ip in private if not ip.startswith("192.168.64.")]
     pick = (home or private or [None])[0]
     if pick:
-        return f"Home Wi‑Fi: on iPhone open http://{pick}:{port}/phone (same network as Mac)"
+        return (
+            f"Text on Wi‑Fi: http://{pick}:{port}/phone · "
+            f"Mic button needs HTTPS: ./start_jarvis.sh --phone-https"
+        )
     return (
-        f"Use ngrok from the Mac: `ngrok http {port}` → open that https URL + /phone"
+        f"Start stack: ./start_jarvis.sh · Phone mic: ./start_jarvis.sh --phone-https"
     )
 
 

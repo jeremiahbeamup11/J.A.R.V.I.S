@@ -74,6 +74,9 @@ def health():
         "hotspot_like": is_hotspot_like(),
         "ips": lan_ips(),
         "hint": preferred_lan_hint(PHONE_PORT),
+        "start": "./start_jarvis.sh",
+        "start_phone_https": "./start_jarvis.sh --phone-https",
+        "stop": "./stop_jarvis.sh",
         "memory": {
             "session_turns": mem.get("session_turns"),
             "long_term_notes": mem.get("long_term_notes"),

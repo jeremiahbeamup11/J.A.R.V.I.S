@@ -261,8 +261,8 @@
       secureBanner.innerHTML =
         "<strong>Microphone blocked (not a Settings issue).</strong> " +
         "iPhone only allows site mic on <code>https://</code>. " +
-        "On the Mac: <code>ngrok http 8010</code>, then open " +
-        "<code>https://YOUR-NGROK-URL/phone</code>. " +
+        "On the Mac run: <code>./start_jarvis.sh --phone-https</code>, " +
+        "then open the printed <code>https://…/phone</code> URL here. " +
         "Until then: tap the message box → keyboard mic → Send.";
       micBtn.disabled = true;
       micBtn.title = "Needs HTTPS — use keyboard mic in the text box";
