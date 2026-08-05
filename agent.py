@@ -47,23 +47,17 @@ SYSTEM_PROMPT = (
     "Mac control: open apps, set volume, media, open URLs, run Shortcuts, "
     "open_file (workshop paths), reveal_in_finder.\n\n"
     "Workshop / design (important): When the user asks how a physical system "
-    "works, how to design something, or wants a model they can see/touch "
-    "(example: lunar hopper thermal system), do a multi-step workflow:\n"
-    "  1) Reason briefly about the real engineering requirements.\n"
-    "  2) build_3d_model with a SYSTEM TEMPLATE — do NOT invent 3–4 random "
-    "shapes. Prefer template=lunar_thermal for heat/cooling/radiators; "
-    "hopper_lander for the whole vehicle; propulsion for engines; "
-    "electronics_bay for avionics thermal. engine=auto, open_after=true, "
-    "render=true when a still image helps. Free-form parts only for custom "
-    "one-offs, and then use pipe/panel/torus/leg types with ≥8 meaningful parts.\n"
-    "  3) write_design_brief into the same project_dir (or rely on template brief).\n"
-    "  4) open_file blend with app_name='Blender' (already done if open_after).\n"
-    "  5) Explain using the legend/color key: blue=tanks, red=radiators, "
-    "gold=heat pipes, cyan=cold plates, green=avionics, orange=propulsion, "
-    "gray=structure, purple=sensors. Point at named parts while talking.\n"
-    "Always do steps 2–4 for design/how-do-we-build/physical-system questions "
-    "unless the user only wants a pure verbal answer. "
-    "list_workshop_templates / workshop_engines if needed.\n\n"
+    "works or wants a model they can see/touch:\n"
+    "  **Default for real engineering concepts (hopper thermal, lander, "
+    "propulsion, mechanisms): use design_3d_with_grok.** That runs Grok Build "
+    "to author a full Blender scene (much stronger than Claude stacking boxes), "
+    "then opens the .blend. Pass a detailed description of subsystems. "
+    "Use continue_session=true for follow-ups like 'add more heat pipes'.\n"
+    "  **Only for a fast rough sketch:** build_3d_model with a template "
+    "(lunar_thermal, hopper_lander, propulsion, electronics_bay).\n"
+    "  After either tool: explain the system while referring to named parts / "
+    "LEGEND.md. Never claim you cannot open Blender if the tool returned a blend_path.\n"
+    "  Pure verbal theory with no model: skip tools only if the user says so.\n\n"
     "Software engineering: use run_grok_build for implement/fix/refactor/"
     "scaffold/tests on allowlisted code projects. Multi-step product builds: "
     "keep continue_session=true (default) so Grok remembers prior steps on "
@@ -260,7 +254,11 @@ def agent_loop(user_message: str, *, use_memory: bool = True) -> tuple[str, str]
                 except Exception as exc:
                     result = {"error": f"{type(exc).__name__}: {exc}"}
                 # Keep active project in sync when Grok/workshop touch a path
-                if use_memory and block.name in ("run_grok_build", "build_3d_model"):
+                if use_memory and block.name in (
+                    "run_grok_build",
+                    "build_3d_model",
+                    "design_3d_with_grok",
+                ):
                     _maybe_capture_project(block.name, block.input, result)
                 tool_results.append(
                     {
@@ -288,7 +286,7 @@ def _maybe_capture_project(tool_name: str, tool_input: dict, result: dict) -> No
         path = None
         if tool_name == "run_grok_build":
             path = result.get("project_path") or (tool_input or {}).get("project_path")
-        elif tool_name == "build_3d_model":
+        elif tool_name in ("build_3d_model", "design_3d_with_grok"):
             path = result.get("project_dir")
         if path:
             set_active_project(str(path))
@@ -305,6 +303,7 @@ def _anthropic_to_ollama_tools(schemas: list[dict]) -> list[dict]:
         "run_grok_build",
         "list_grok_sessions",
         "clear_grok_session",
+        "design_3d_with_grok",
         "build_3d_model",
         "workshop_engines",
         "list_workshop_templates",

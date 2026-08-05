@@ -24,6 +24,7 @@ from tools.workshop import (  # noqa: F401 — re-export
     write_design_brief,
 )
 from tools.workshop_templates import list_templates  # noqa: F401
+from tools.workshop_grok import design_3d_with_grok  # noqa: F401
 from memory import (  # noqa: F401 — re-export
     forget,
     recall,
@@ -364,16 +365,64 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "design_3d_with_grok",
+        "description": (
+            "HIGH-FIDELITY 3D design: Grok Build authors a full Blender (bpy) scene, "
+            "then Jarvis runs it headlessly and opens the .blend. Use this when the "
+            "user wants a serious engineering concept model (lunar hopper thermal, "
+            "lander, propulsion, mechanisms) that should look like a system — NOT "
+            "a few random primitives. Prefer this over build_3d_model for quality. "
+            "Multi-turn: continue_session=true to refine the same design. "
+            "Takes longer (Grok agent run)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "description": (
+                        "Full design request: what system, key subsystems, constraints, "
+                        "what must be visible in the model."
+                    ),
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Short project slug, e.g. 'lunar_hopper_thermal'.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Human title for the design.",
+                },
+                "open_after": {
+                    "type": "boolean",
+                    "description": "Open model.blend in Blender when done (default true).",
+                },
+                "continue_session": {
+                    "type": "boolean",
+                    "description": "Resume Grok design session for this project (default true).",
+                },
+                "new_session": {
+                    "type": "boolean",
+                    "description": "Force a fresh Grok design session.",
+                },
+                "max_turns": {
+                    "type": "integer",
+                    "description": "Optional Grok turn cap (default higher for design).",
+                    "minimum": 5,
+                    "maximum": 128,
+                },
+            },
+            "required": ["description", "name"],
+        },
+    },
+    {
         "name": "build_3d_model",
         "description": (
-            "Build a tangible 3D system model in the workshop. "
-            "PREFER template= for real designs so you do NOT invent 3–4 random shapes: "
-            "lunar_thermal (tank+heat pipes+dual radiators+MLI+avionics), "
-            "hopper_lander (full vehicle), propulsion, electronics_bay. "
-            "engine=auto uses Blender when installed (.blend/.stl/.glb, optional PNG). "
-            "After build: open_file blend with app_name='Blender'. "
-            "Explain using the returned legend and color key "
-            "(blue=tanks, red=radiators, gold=heat pipes, green=avionics)."
+            "QUICK schematic 3D model via templates/primitives (fast). "
+            "Use for rough whiteboard-style assemblies. For serious / realistic "
+            "concept models, prefer design_3d_with_grok instead. "
+            "Templates: lunar_thermal, hopper_lander, propulsion, electronics_bay. "
+            "engine=auto uses Blender for colorized .blend when installed."
         ),
         "input_schema": {
             "type": "object",
@@ -634,6 +683,7 @@ TOOL_FUNCTIONS = {
     "run_grok_build": run_grok_build,
     "list_grok_sessions": list_grok_sessions,
     "clear_grok_session": clear_grok_session,
+    "design_3d_with_grok": design_3d_with_grok,
     "build_3d_model": build_3d_model,
     "workshop_engines": workshop_engines,
     "list_workshop_templates": list_templates,

@@ -12,22 +12,21 @@ to workshop model quality.
   on Mac/host), not serverless Vercel alone for the whole brain.
 
 ## Last Completed
-Workshop model upgrade (11b2):
-- `tools/workshop_templates.py` — lunar_thermal, hopper_lander, propulsion,
-  electronics_bay with real subsystem part counts + color legend
-- Blender types: pipe, torus, panel, leg + auto-framed camera
-- Optional PNG still (`render=true`)
-- `build_3d_model(template=...)` preferred path
-- Agent prompt: forbid 3–4 random shapes; use templates
-- `GET /workshop/templates`
+Workshop quality paths:
+1. Templates (11b2) — fast schematic systems
+2. **design_3d_with_grok** — Grok Build authors full Blender bpy scenes
+   (stronger fidelity). Claude orchestrates/explains; Grok models.
+
+- `tools/workshop_grok.py` — seed project → Grok → Blender headless → open
+- Agent prompt: prefer design_3d_with_grok for real engineering concepts
 
 ## Current Task
-(none — user should restart stack and re-ask thermal/hopper design)
+(none — restart stack; ask for thermal model to use Grok path)
 
 ## Next
-1. Live voice: "lunar hopper thermal system" → should open dense template
-2. Optional further geometry polish / Keynote (11c)
-3. Private host / remote access when ready
+1. Live test design_3d_with_grok (longer run; needs Grok + Blender)
+2. Private host / phone when ready
+3. Keynote (11c) optional
 
 ## How to test
 ```bash
