@@ -25,6 +25,7 @@ from agent import MODEL, OLLAMA_MODEL, agent_loop, agent_loop_local, routed_chat
 from memory import clear_session, recall, remember, status as memory_status
 from tools.grok_build import clear_grok_session, list_grok_sessions
 from tools.workshop import workshop_engines
+from tools.workshop_templates import list_templates
 from phone_api import (
     audio_to_wav,
     auth_required,
@@ -144,6 +145,12 @@ def grok_sessions_clear(req: ClearGrokSessionRequest | None = None):
 def workshop_engines_status():
     """Which 3D engines are available (primitives always; Blender if installed)."""
     return workshop_engines()
+
+
+@app.get("/workshop/templates")
+def workshop_templates_list():
+    """System templates for build_3d_model (lunar_thermal, hopper_lander, …)."""
+    return list_templates()
 
 
 @app.post("/chat")

@@ -23,6 +23,7 @@ from tools.workshop import (  # noqa: F401 — re-export
     workshop_engines,
     write_design_brief,
 )
+from tools.workshop_templates import list_templates  # noqa: F401
 from memory import (  # noqa: F401 — re-export
     forget,
     recall,
@@ -365,13 +366,14 @@ TOOL_SCHEMAS = [
     {
         "name": "build_3d_model",
         "description": (
-            "Build a tangible 3D assembly in the workshop folder from primitive "
-            "parts (box, cylinder, sphere, cone). engine=auto uses Blender when "
-            "installed (named + colorized .blend + STL + GLB) else pure-Python "
-            "STL. After building: if blend_path exists, open_file with "
-            "app_name='Blender'; for STL-only use eDrawings/Preview. "
-            "Optional color [r,g,b] 0-1 on each part for Blender. "
-            "Keep assemblies under ~40 parts when possible."
+            "Build a tangible 3D system model in the workshop. "
+            "PREFER template= for real designs so you do NOT invent 3–4 random shapes: "
+            "lunar_thermal (tank+heat pipes+dual radiators+MLI+avionics), "
+            "hopper_lander (full vehicle), propulsion, electronics_bay. "
+            "engine=auto uses Blender when installed (.blend/.stl/.glb, optional PNG). "
+            "After build: open_file blend with app_name='Blender'. "
+            "Explain using the returned legend and color key "
+            "(blue=tanks, red=radiators, gold=heat pipes, green=avionics)."
         ),
         "input_schema": {
             "type": "object",
@@ -383,6 +385,17 @@ TOOL_SCHEMAS = [
                 "title": {
                     "type": "string",
                     "description": "Human title for the model.",
+                },
+                "template": {
+                    "type": "string",
+                    "description": (
+                        "System template id: lunar_thermal | hopper_lander | "
+                        "propulsion | electronics_bay. Preferred over free-form parts."
+                    ),
+                },
+                "scale": {
+                    "type": "number",
+                    "description": "Uniform scale for templates (default 1.0).",
                 },
                 "units": {
                     "type": "string",
@@ -400,6 +413,10 @@ TOOL_SCHEMAS = [
                         "blender=require Blender; primitives=STL only."
                     ),
                 },
+                "render": {
+                    "type": "boolean",
+                    "description": "If true (Blender), also export a PNG still render.",
+                },
                 "open_after": {
                     "type": "boolean",
                     "description": "If true and Blender built a .blend, open it in Blender.",
@@ -407,16 +424,14 @@ TOOL_SCHEMAS = [
                 "parts": {
                     "type": "array",
                     "description": (
-                        "List of part objects. Each: type (box|cylinder|sphere|cone), "
-                        "optional name, pos [x,y,z], optional color [r,g,b] 0-1, "
-                        "and type-specific size: box size [sx,sy,sz]; "
-                        "cylinder/cone radius+height (+axis for cylinder); "
-                        "sphere radius. Y is up."
+                        "Optional free-form parts if not using template. Types: "
+                        "box|cylinder|sphere|cone|pipe|torus|panel|leg. "
+                        "Prefer template for thermal/vehicle systems."
                     ),
                     "items": {"type": "object"},
                 },
             },
-            "required": ["name", "parts"],
+            "required": ["name"],
         },
     },
     {
@@ -424,6 +439,17 @@ TOOL_SCHEMAS = [
         "description": (
             "Report whether Blender / primitives engines are available for "
             "build_3d_model. Call if unsure whether Blender is installed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "list_workshop_templates",
+        "description": (
+            "List system templates for build_3d_model (lunar_thermal, hopper_lander, etc.)."
         ),
         "input_schema": {
             "type": "object",
@@ -610,6 +636,7 @@ TOOL_FUNCTIONS = {
     "clear_grok_session": clear_grok_session,
     "build_3d_model": build_3d_model,
     "workshop_engines": workshop_engines,
+    "list_workshop_templates": list_templates,
     "write_design_brief": write_design_brief,
     "open_file": open_file,
     "reveal_in_finder": reveal_in_finder,

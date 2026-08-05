@@ -1,46 +1,41 @@
 # Loop State
 
 ## Context
-Ops + phone HTTPS path landed. Next major depth item is workshop model
-quality (templates / richer thermal assemblies), per user plan.
+Phone/local HTTPS deferred — user will solve remote access via private
+cloud / always-on host later (not pure Vercel for whole stack). Focus moved
+to workshop model quality.
+
+## Architecture note (phone / cloud)
+- Public HTTPS origin helps the *phone UI + mic*.
+- Full Jarvis still needs a machine that can run Blender, mac_agent, wake
+  word, Grok CLI — a home always-on box or hybrid (web UI in cloud, bodies
+  on Mac/host), not serverless Vercel alone for the whole brain.
 
 ## Last Completed
-1. **Full-stack start/stop scripts (ops)**
-   - `./start_jarvis.sh` — mac_agent (:8765) + orchestrator (:8010) + wakeword
-   - `./stop_jarvis.sh` — stops pid-file managed processes
-   - Flags: `--phone-https`, `--no-voice`, `--no-mac`
-   - Logs: `data/logs/`  Pids: `data/run/`
-
-2. **Phone mic HTTPS (12b)**
-   - `./start_jarvis.sh --phone-https` starts ngrok (web-addr :4042)
-   - Prints `https://…/phone` for Safari mic (secure context)
-   - Phone UI banner + status hints updated to use the start script
-   - LAN `http://…/phone` still fine for **text** + keyboard dictation
+Workshop model upgrade (11b2):
+- `tools/workshop_templates.py` — lunar_thermal, hopper_lander, propulsion,
+  electronics_bay with real subsystem part counts + color legend
+- Blender types: pipe, torus, panel, leg + auto-framed camera
+- Optional PNG still (`render=true`)
+- `build_3d_model(template=...)` preferred path
+- Agent prompt: forbid 3–4 random shapes; use templates
+- `GET /workshop/templates`
 
 ## Current Task
-(none)
+(none — user should restart stack and re-ask thermal/hopper design)
 
-## Next (user-agreed order)
-1. ~~Start script + full stack~~ DONE
-2. ~~Phone mic HTTPS (12b)~~ DONE
-3. **Upgrade workshop models** — templates, richer parts, layout rules,
-   optional still-render (so thermal systems look like systems)
+## Next
+1. Live voice: "lunar hopper thermal system" → should open dense template
+2. Optional further geometry polish / Keynote (11c)
+3. Private host / remote access when ready
 
-## How to run daily
+## How to test
 ```bash
 cd ~/Desktop/JARVIS
-./start_jarvis.sh
-# Room: "Hey Jarvis …"
-
-# iPhone mic:
-./stop_jarvis.sh   # if already up without tunnel
-./start_jarvis.sh --phone-https
-# open the printed https://…/phone URL on the phone
+./stop_jarvis.sh 2>/dev/null; ./start_jarvis.sh
+# or: python3 wakeword.py
+# "Hey Jarvis, how does a lunar hopper thermal system work — build the model"
 ```
-
-## Note
-If ngrok ERR_NGROK_334: another ngrok is using the free reserved domain
-(often `ngrok http 5001`). Stop that process, then retry --phone-https.
 
 ## Blocked
 (none)

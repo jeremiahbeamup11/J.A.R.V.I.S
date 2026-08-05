@@ -50,17 +50,20 @@ SYSTEM_PROMPT = (
     "works, how to design something, or wants a model they can see/touch "
     "(example: lunar hopper thermal system), do a multi-step workflow:\n"
     "  1) Reason briefly about the real engineering requirements.\n"
-    "  2) build_3d_model with engine=auto — Blender if installed (named + "
-    "colorized parts → .blend/.stl/.glb), else primitive STL. Use clear part "
-    "names and optional color [r,g,b]. Not photoreal; readable schematic.\n"
-    "  3) write_design_brief into the same project_dir explaining the design.\n"
-    "  4) open_file: if blend_path exists use app_name='Blender'; else STL with "
-    "eDrawings/Preview. Also reveal_in_finder when helpful.\n"
-    "  5) Explain the system while referring to named/colored parts "
-    "(e.g. blue cylinder = propellant tank, red plate = radiator).\n"
+    "  2) build_3d_model with a SYSTEM TEMPLATE — do NOT invent 3–4 random "
+    "shapes. Prefer template=lunar_thermal for heat/cooling/radiators; "
+    "hopper_lander for the whole vehicle; propulsion for engines; "
+    "electronics_bay for avionics thermal. engine=auto, open_after=true, "
+    "render=true when a still image helps. Free-form parts only for custom "
+    "one-offs, and then use pipe/panel/torus/leg types with ≥8 meaningful parts.\n"
+    "  3) write_design_brief into the same project_dir (or rely on template brief).\n"
+    "  4) open_file blend with app_name='Blender' (already done if open_after).\n"
+    "  5) Explain using the legend/color key: blue=tanks, red=radiators, "
+    "gold=heat pipes, cyan=cold plates, green=avionics, orange=propulsion, "
+    "gray=structure, purple=sensors. Point at named parts while talking.\n"
     "Always do steps 2–4 for design/how-do-we-build/physical-system questions "
-    "unless the user only wants a pure verbal answer. Call workshop_engines "
-    "if you need to know whether Blender is available.\n\n"
+    "unless the user only wants a pure verbal answer. "
+    "list_workshop_templates / workshop_engines if needed.\n\n"
     "Software engineering: use run_grok_build for implement/fix/refactor/"
     "scaffold/tests on allowlisted code projects. Multi-step product builds: "
     "keep continue_session=true (default) so Grok remembers prior steps on "
@@ -304,6 +307,7 @@ def _anthropic_to_ollama_tools(schemas: list[dict]) -> list[dict]:
         "clear_grok_session",
         "build_3d_model",
         "workshop_engines",
+        "list_workshop_templates",
         "write_design_brief",
         "open_file",
         "reveal_in_finder",

@@ -174,6 +174,9 @@ Safety:
 Milestones:
 - 11a: [DONE] build_3d_model + brief + open_file/reveal + system-prompt workflow
 - 11b: [DONE] Blender engine (auto detect), colorized named parts, .blend/.glb
+- 11b2: [DONE] System templates (lunar_thermal, hopper_lander, propulsion,
+      electronics_bay) + pipe/torus/panel/leg types + optional PNG render;
+      agent must prefer templates over random free-form shapes
 - 11c: (LATER) app-specific drivers (Keynote slides, Rotato, etc.)
 - 11d: (LATER) voice-safe confirm before long workshop builds
 - 11e: (LATER) CadQuery/STEP path if solid-model export is needed

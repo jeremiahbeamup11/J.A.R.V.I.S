@@ -105,12 +105,13 @@ spec = json.loads(spec_path.read_text(encoding="utf-8"))
 out_blend = Path(spec["out_blend"])
 out_stl = Path(spec["out_stl"])
 out_glb = Path(spec.get("out_glb") or "")
+out_png = Path(spec.get("out_png") or "")
+do_render = bool(spec.get("render"))
 parts = spec.get("parts") or []
 title = spec.get("title") or "Jarvis Model"
 
 # Fresh scene
 bpy.ops.wm.read_factory_settings(use_empty=True)
-# Remove default objects if any remain
 for obj in list(bpy.data.objects):
     bpy.data.objects.remove(obj, do_unlink=True)
 
@@ -124,14 +125,18 @@ def ensure_material(name, rgb):
     if bsdf:
         bsdf.inputs["Base Color"].default_value = (rgb[0], rgb[1], rgb[2], 1.0)
         if "Roughness" in bsdf.inputs:
-            bsdf.inputs["Roughness"].default_value = 0.45
+            bsdf.inputs["Roughness"].default_value = 0.42
+        if "Metallic" in bsdf.inputs:
+            bsdf.inputs["Metallic"].default_value = 0.15
     return mat
 
-def set_origin_to_geometry(obj):
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
-    obj.select_set(False)
+def apply_axis(obj, axis):
+    axis = (axis or "z").lower()
+    if axis == "x":
+        obj.rotation_euler = (0.0, math.radians(90), 0.0)
+    elif axis == "y":
+        obj.rotation_euler = (math.radians(90), 0.0, 0.0)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
 created = []
 for i, part in enumerate(parts):
@@ -146,32 +151,27 @@ for i, part in enumerate(parts):
         palette = spec.get("palette") or []
         color = palette[i % len(palette)] if palette else [0.7, 0.7, 0.7]
     rgb = (float(color[0]), float(color[1]), float(color[2]))
+    axis = str(part.get("axis", "z")).lower()
+    segs = max(8, min(int(part.get("segments", 32)), 64))
 
     obj = None
-    if ptype == "box":
-        size = part.get("size") or [10, 10, 10]
+    if ptype in ("box", "panel", "leg"):
+        size = part.get("size") or ([20, 0.8, 14] if ptype == "panel" else [2, 14, 2] if ptype == "leg" else [10, 10, 10])
         sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
         bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, cy, cz))
         obj = bpy.context.active_object
         obj.scale = (sx / 2.0, sy / 2.0, sz / 2.0)
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    elif ptype == "cylinder":
-        r = float(part.get("radius", 5))
-        h = float(part.get("height", 10))
-        axis = str(part.get("axis", "z")).lower()
-        segs = max(8, min(int(part.get("segments", 32)), 64))
+    elif ptype in ("cylinder", "pipe"):
+        r = float(part.get("radius", 0.8 if ptype == "pipe" else 5))
+        h = float(part.get("height", part.get("length", 10)))
         bpy.ops.mesh.primitive_cylinder_add(
             radius=r, depth=h, vertices=segs, location=(cx, cy, cz)
         )
         obj = bpy.context.active_object
-        if axis == "x":
-            obj.rotation_euler = (0.0, math.radians(90), 0.0)
-        elif axis == "y":
-            obj.rotation_euler = (math.radians(90), 0.0, 0.0)
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        apply_axis(obj, axis)
     elif ptype == "sphere":
         r = float(part.get("radius", 5))
-        segs = max(8, min(int(part.get("segments", 24)), 64))
         bpy.ops.mesh.primitive_uv_sphere_add(
             radius=r, segments=segs, ring_count=max(8, segs // 2), location=(cx, cy, cz)
         )
@@ -179,9 +179,19 @@ for i, part in enumerate(parts):
     elif ptype == "cone":
         r = float(part.get("radius", 5))
         h = float(part.get("height", 10))
-        segs = max(8, min(int(part.get("segments", 32)), 64))
         bpy.ops.mesh.primitive_cone_add(
             radius1=r, radius2=0.0, depth=h, vertices=segs, location=(cx, cy, cz)
+        )
+        obj = bpy.context.active_object
+    elif ptype == "torus":
+        major = float(part.get("radius", 10))
+        minor = float(part.get("radius2", part.get("thickness", 1.2)))
+        bpy.ops.mesh.primitive_torus_add(
+            major_radius=major,
+            minor_radius=minor,
+            major_segments=max(16, segs),
+            minor_segments=max(8, segs // 2),
+            location=(cx, cy, cz),
         )
         obj = bpy.context.active_object
     else:
@@ -196,41 +206,77 @@ for i, part in enumerate(parts):
         obj.data.materials[0] = mat
     else:
         obj.data.materials.append(mat)
-    created.append({"name": obj.name, "type": ptype})
+    created.append({"name": obj.name, "type": ptype, "role": part.get("role")})
 
-# Simple camera + light for nicer .blend open experience
-bpy.ops.object.light_add(type="SUN", location=(20, -20, 40))
-bpy.ops.object.camera_add(location=(45, -45, 35))
+# Lighting + camera framed on scene
+bpy.ops.object.light_add(type="SUN", location=(30, -25, 50))
+sun = bpy.context.active_object
+sun.data.energy = 3.0
+bpy.ops.object.light_add(type="AREA", location=(-20, 30, 25))
+bpy.context.active_object.data.energy = 200.0
+
+# Auto-frame camera from mesh bounds
+min_v = [1e9, 1e9, 1e9]
+max_v = [-1e9, -1e9, -1e9]
+for obj in bpy.data.objects:
+    if obj.type != "MESH":
+        continue
+    for corner in obj.bound_box:
+        w = obj.matrix_world @ __import__("mathutils").Vector(corner)
+        for a in range(3):
+            min_v[a] = min(min_v[a], w[a])
+            max_v[a] = max(max_v[a], w[a])
+cx = (min_v[0] + max_v[0]) / 2.0
+cy = (min_v[1] + max_v[1]) / 2.0
+cz = (min_v[2] + max_v[2]) / 2.0
+span = max(max_v[0] - min_v[0], max_v[1] - min_v[1], max_v[2] - min_v[2], 10.0)
+dist = span * 1.8
+bpy.ops.object.camera_add(location=(cx + dist * 0.7, cy - dist * 0.9, cz + dist * 0.55))
 cam = bpy.context.active_object
-cam.rotation_euler = (math.radians(60), 0.0, math.radians(45))
+# Point camera at center
+direction = __import__("mathutils").Vector((cx, cy, cz)) - cam.location
+cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 bpy.context.scene.camera = cam
-
-# Collection name
-if created:
-    coll = bpy.data.collections.new(title[:60] or "Jarvis")
-    bpy.context.scene.collection.children.link(coll)
 
 out_blend.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.save_as_mainfile(filepath=str(out_blend))
 
-# Export STL (all meshes)
 for obj in bpy.data.objects:
     obj.select_set(obj.type == "MESH")
 try:
     bpy.ops.export_mesh.stl(filepath=str(out_stl), use_selection=True)
 except Exception:
-    # Blender 4+ may use different operator
     try:
         bpy.ops.wm.stl_export(filepath=str(out_stl), export_selected_objects=True)
     except Exception as exc:
         print("STL_EXPORT_FAIL", exc)
 
-# Export glTF/GLB
 if out_glb:
     try:
         bpy.ops.export_scene.gltf(filepath=str(out_glb), export_format="GLB")
     except Exception as exc:
         print("GLB_EXPORT_FAIL", exc)
+
+render_path = None
+if do_render and out_png:
+    scene = bpy.context.scene
+    scene.render.engine = "BLENDER_EEVEE_NEXT" if hasattr(bpy.types, "EEVEE") or True else "BLENDER_EEVEE"
+    try:
+        scene.render.engine = "BLENDER_EEVEE_NEXT"
+    except Exception:
+        try:
+            scene.render.engine = "BLENDER_EEVEE"
+        except Exception:
+            scene.render.engine = "CYCLES"
+    scene.render.resolution_x = 1280
+    scene.render.resolution_y = 720
+    scene.render.filepath = str(out_png)
+    scene.render.image_settings.file_format = "PNG"
+    try:
+        bpy.ops.render.render(write_still=True)
+        render_path = str(out_png)
+    except Exception as exc:
+        print("RENDER_FAIL", exc)
 
 result = {
     "ok": True,
@@ -239,6 +285,7 @@ result = {
     "blend": str(out_blend),
     "stl": str(out_stl),
     "glb": str(out_glb) if out_glb else None,
+    "png": render_path,
 }
 print("JARVIS_BLENDER_RESULT=" + json.dumps(result))
 '''
@@ -250,6 +297,7 @@ def build_with_blender(
     title: str,
     parts: list,
     units: str = "cm",
+    render: bool = False,
 ) -> dict:
     """Create .blend / .stl / .glb via headless Blender from parts list."""
     blender = find_blender()
@@ -275,6 +323,7 @@ def build_with_blender(
     out_blend = project / f"{slug}.blend"
     out_stl = project / f"{slug}.stl"
     out_glb = project / f"{slug}.glb"
+    out_png = project / f"{slug}.png"
     script_path = project / "_jarvis_blender_build.py"
     spec_path = project / "_jarvis_blender_spec.json"
 
@@ -286,6 +335,8 @@ def build_with_blender(
         "out_blend": str(out_blend),
         "out_stl": str(out_stl),
         "out_glb": str(out_glb),
+        "out_png": str(out_png),
+        "render": bool(render),
     }
     spec_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
     script_path.write_text(_BLENDER_SCRIPT, encoding="utf-8")
@@ -358,6 +409,10 @@ def build_with_blender(
             }
         )
 
+    png_path = str(out_png) if out_png.exists() else None
+    if parsed and parsed.get("png"):
+        png_path = parsed["png"]
+
     return {
         "ok": True,
         "engine": "blender",
@@ -366,6 +421,7 @@ def build_with_blender(
         "blend_path": str(out_blend) if out_blend.exists() else None,
         "stl_path": str(out_stl) if out_stl.exists() else None,
         "glb_path": str(out_glb) if out_glb.exists() else None,
+        "png_path": png_path,
         "part_count": len(catalog),
         "parts": catalog,
         "blender_report": parsed,

@@ -28,6 +28,7 @@ from pathlib import Path
 import requests
 
 from tools.blender_engine import blender_available, blender_status, build_with_blender
+from tools.workshop_templates import expand_template, list_templates
 
 MAC_AGENT_URL = os.environ.get("MAC_AGENT_URL", "http://localhost:8765")
 
@@ -226,15 +227,17 @@ def _part_to_mesh(part: dict) -> list[Tri]:
         pos = [0, 0, 0]
     cx, cy, cz = float(pos[0]), float(pos[1]), float(pos[2])
 
-    if ptype == "box":
-        size = part.get("size") or [10, 10, 10]
+    if ptype in ("box", "panel", "leg"):
+        size = part.get("size") or (
+            [20, 0.8, 14] if ptype == "panel" else [2, 14, 2] if ptype == "leg" else [10, 10, 10]
+        )
         if not isinstance(size, (list, tuple)) or len(size) != 3:
             size = [10, 10, 10]
         return _box_mesh(cx, cy, cz, float(size[0]), float(size[1]), float(size[2]))
 
-    if ptype == "cylinder":
-        r = float(part.get("radius", 5))
-        h = float(part.get("height", 10))
+    if ptype in ("cylinder", "pipe"):
+        r = float(part.get("radius", 0.8 if ptype == "pipe" else 5))
+        h = float(part.get("height", part.get("length", 10)))
         axis = str(part.get("axis", "z"))
         segs = int(part.get("segments", 24))
         return _cylinder_mesh(cx, cy, cz, r, h, axis=axis, segments=segs)
@@ -249,6 +252,12 @@ def _part_to_mesh(part: dict) -> list[Tri]:
         h = float(part.get("height", 10))
         segs = int(part.get("segments", 24))
         return _cone_mesh(cx, cy, cz, r, h, segments=segs)
+
+    if ptype == "torus":
+        # Approximate torus as a short fat cylinder ring (primitives path)
+        major = float(part.get("radius", 10))
+        minor = float(part.get("radius2", part.get("thickness", 1.2)))
+        return _cylinder_mesh(cx, cy, cz, major, minor * 2, axis="y", segments=24)
 
     # unknown → small marker box so we don't fail the whole assembly
     return _box_mesh(cx, cy, cz, 2, 2, 2)
@@ -362,31 +371,57 @@ def _build_primitives(
 
 def build_3d_model(
     name: str,
-    parts: list,
+    parts: list | None = None,
     title: str | None = None,
     units: str = "cm",
     notes: str | None = None,
     engine: str = "auto",
     open_after: bool = False,
+    template: str | None = None,
+    scale: float = 1.0,
+    render: bool = False,
 ) -> dict:
     """Assemble parts into a workshop 3D model.
 
-    Each part is a dict, e.g.:
-      {"type":"box","name":"radiator","size":[40,2,20],"pos":[0,15,0],
-       "color":[0.9,0.3,0.2]}
-      {"type":"cylinder","name":"tank","radius":6,"height":18,"pos":[0,0,0]}
-      {"type":"sphere","name":"sensor","radius":2,"pos":[10,0,8]}
-      {"type":"cone","name":"nozzle","radius":3,"height":8,"pos":[0,-12,0]}
+    Prefer template= for real systems (stops random 4-shape toys):
+      template="lunar_thermal" | "hopper_lander" | "propulsion" | "electronics_bay"
 
-    engine:
-      - auto (default): Blender if installed, else primitives
-      - blender: require Blender (colorized .blend + STL + GLB)
-      - primitives: pure-Python STL only
+    Or pass free-form parts:
+      {"type":"box|cylinder|sphere|cone|pipe|torus|panel|leg", "name":"...",
+       "pos":[x,y,z], "color":[r,g,b], ...}
 
-    Coordinate system: X right, Y up, Z toward viewer. Units are labels.
+    engine: auto | blender | primitives
+    render: if True and Blender, also write a PNG still (EEVEE).
     """
-    if not parts or not isinstance(parts, list):
-        return {"ok": False, "error": "parts must be a non-empty list of part dicts"}
+    legend = None
+    template_id = None
+    parts = list(parts) if parts else []
+
+    if template and str(template).strip():
+        expanded = expand_template(str(template).strip(), scale=scale)
+        if not expanded.get("ok"):
+            return expanded
+        parts = list(expanded["parts"])
+        legend = expanded.get("legend")
+        template_id = expanded.get("template")
+        if not title:
+            title = f"{template_id} system"
+        if not notes:
+            notes = (
+                f"Template `{template_id}` schematic. Color key: "
+                + ", ".join(f"{k}={v}" for k, v in (expanded.get("color_key") or {}).items())
+            )
+
+    if not parts:
+        return {
+            "ok": False,
+            "error": (
+                "parts is empty and no template given. "
+                "Use template='lunar_thermal' (or hopper_lander, propulsion, electronics_bay) "
+                "or pass a parts list."
+            ),
+            "templates": list_templates().get("templates"),
+        }
 
     if len(parts) > 80:
         return {"ok": False, "error": "too many parts (max 80) — simplify the assembly"}
@@ -408,11 +443,11 @@ def build_3d_model(
             "hint": eng_info.get("hint"),
         }
 
-    slug = _slug(name)
+    slug = _slug(name or template_id or "model")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     project = workshop_dir() / f"{slug}_{stamp}"
     project.mkdir(parents=True, exist_ok=True)
-    display_title = title or name
+    display_title = title or name or (template_id or "model")
 
     if use_blender:
         bl = build_with_blender(
@@ -421,6 +456,7 @@ def build_3d_model(
             title=display_title,
             parts=parts,
             units=units,
+            render=bool(render),
         )
         if not bl.get("ok"):
             # auto falls back to primitives; hard blender request does not
@@ -441,42 +477,57 @@ def build_3d_model(
             "name": slug,
             "title": display_title,
             "engine": "blender",
+            "template": template_id,
             "units": units,
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "part_count": bl.get("part_count"),
             "parts": bl.get("parts"),
+            "legend": legend,
             "stl": bl.get("stl_path"),
             "blend": bl.get("blend_path"),
             "glb": bl.get("glb_path"),
+            "png": bl.get("png_path"),
             "notes": notes or "",
         }
         meta_path = project / "model.json"
         meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-        if notes:
-            (project / "BRIEF.md").write_text(
-                f"# {display_title}\n\n{notes}\n",
-                encoding="utf-8",
-            )
+        if notes or legend:
+            brief_lines = [f"# {display_title}\n"]
+            if notes:
+                brief_lines.append(notes + "\n")
+            if legend:
+                brief_lines.append("\n## Part legend\n")
+                for row in legend:
+                    brief_lines.append(
+                        f"- **{row.get('name')}** ({row.get('type')}): {row.get('role') or '—'}\n"
+                    )
+            (project / "BRIEF.md").write_text("".join(brief_lines), encoding="utf-8")
 
         blend = bl.get("blend_path")
         stl = bl.get("stl_path")
+        png = bl.get("png_path")
         result = {
             "ok": True,
             "engine": "blender",
+            "template": template_id,
             "project_dir": str(project),
             "stl_path": stl,
             "blend_path": blend,
             "glb_path": bl.get("glb_path"),
+            "png_path": png,
             "meta_path": str(meta_path),
             "part_count": bl.get("part_count"),
+            "legend": legend,
             "units": units,
             "result": (
-                f"Built Blender model '{display_title}' with {bl.get('part_count')} "
-                f"named/colorized parts. "
-                f"Open blend in Blender: {blend}. STL: {stl}. "
-                "Prefer open_file(path=blend_path, app_name='Blender') so you can "
-                "spin the color-coded assembly while explaining parts by name."
+                f"Built Blender model '{display_title}'"
+                + (f" from template `{template_id}`" if template_id else "")
+                + f" with {bl.get('part_count')} named/colorized parts. "
+                f"Open blend in Blender: {blend}. STL: {stl}."
+                + (f" Render: {png}." if png else "")
+                + " Explain using the part legend (blue=tanks, red=radiators, "
+                "gold=heat pipes, green=avionics)."
             ),
         }
         if open_after and blend:
@@ -484,7 +535,16 @@ def build_3d_model(
             result["opened"] = opened
         return result
 
-    return _build_primitives(project, slug, display_title, parts, units, notes)
+    prim = _build_primitives(project, slug, display_title, parts, units, notes)
+    if prim.get("ok"):
+        prim["template"] = template_id
+        prim["legend"] = legend
+        if template_id:
+            prim["result"] = (
+                f"(primitives engine) Template `{template_id}` → "
+                + str(prim.get("result"))
+            )
+    return prim
 
 
 def write_design_brief(
